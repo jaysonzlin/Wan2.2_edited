@@ -102,6 +102,13 @@ pip install -r requirements.txt
 pip install -r requirements_s2v.txt
 ```
 
+Or create the repository's Conda environment (which installs both the upstream
+requirements and local additions):
+```sh
+conda env create -f environment.yml
+conda activate wan2-2
+```
+
 
 #### Model Download
 
@@ -504,4 +511,3 @@ We would like to thank the contributors to the [SD3](https://huggingface.co/stab
 
 ## Contact Us
 If you would like to leave a message to our research or product teams, feel free to join our [Discord](https://discord.gg/AKNgpMK4Yj) or [WeChat groups](https://gw.alicdn.com/imgextra/i2/O1CN01tqjWFi1ByuyehkTSB_!!6000000000015-0-tps-611-1279.jpg)!
-

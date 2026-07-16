@@ -1,0 +1,10 @@
+name: wan2-2
+channels:
+  - conda-forge
+dependencies:
+  - python=3.10
+  - pip
+  - ffmpeg
+  - pip:
+      - -r requirements.txt
+      - -r added_requirements.txt

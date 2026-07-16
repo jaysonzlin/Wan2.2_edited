@@ -1,0 +1,2 @@
+# Dependencies introduced by the VAE latent-comparison utility and its tests.
+pytest>=8.0
