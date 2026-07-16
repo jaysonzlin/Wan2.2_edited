@@ -50,7 +50,7 @@ Read `WanVAE_` before the transformer. The wrapper creates a 48-dimensional late
 
 Answer in notes:
 
-1. How does pixel patchification combine with the three temporal downsample stages to produce the claimed `4×16×16` VAE stride?
+1. How does pixel patchification combine with the two enabled temporal downsample stages to produce the claimed `4×16×16` VAE stride?
 2. What temporal information can or cannot flow through causal convolutions and their caches?
 3. Why does inference use `mu` rather than sampling from `(mu, log_var)`?
 
