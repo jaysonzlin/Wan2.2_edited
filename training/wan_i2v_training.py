@@ -92,10 +92,12 @@ def load_frozen_encoders(checkpoint_dir: str | Path, wan_config, device: torch.d
         device=device,
         checkpoint_path=str(checkpoint_dir / wan_config.t5_checkpoint),
         tokenizer_path=wan_config.t5_tokenizer,
-    ).eval().requires_grad_(False)
+    )
+    text_encoder.model.eval().requires_grad_(False)
     vae = Wan2_2_VAE(
         vae_pth=str(checkpoint_dir / wan_config.vae_checkpoint), device=device
-    ).eval().requires_grad_(False)
+    )
+    vae.model.eval().requires_grad_(False)
     return vae, text_encoder
 
 

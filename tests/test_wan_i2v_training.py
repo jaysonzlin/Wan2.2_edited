@@ -1,11 +1,67 @@
+import sys
+import types
 import unittest
+from unittest.mock import patch
 
 import torch
 
-from training.wan_i2v_training import make_flow_matching_batch, masked_velocity_mse
+from training.wan_i2v_training import (
+    load_frozen_encoders,
+    make_flow_matching_batch,
+    masked_velocity_mse,
+)
 
 
 class WanI2VTrainingTests(unittest.TestCase):
+    def test_loader_freezes_torch_modules_inside_wan_wrappers(self):
+        class InnerModule:
+            def __init__(self):
+                self.eval_called = False
+                self.requires_grad_value = None
+
+            def eval(self):
+                self.eval_called = True
+                return self
+
+            def requires_grad_(self, value):
+                self.requires_grad_value = value
+                return self
+
+        class Wrapper:
+            def __init__(self, *args, **kwargs):
+                self.model = InnerModule()
+
+        fake_t5_module = types.ModuleType("wan.modules.t5")
+        fake_t5_module.T5EncoderModel = Wrapper
+        fake_vae_module = types.ModuleType("wan.modules.vae2_2")
+        fake_vae_module.Wan2_2_VAE = Wrapper
+        fake_modules = types.ModuleType("wan.modules")
+        fake_wan = types.ModuleType("wan")
+        fake_wan.modules = fake_modules
+
+        config = types.SimpleNamespace(
+            text_len=512,
+            t5_dtype=torch.bfloat16,
+            t5_checkpoint="t5.pth",
+            t5_tokenizer="tokenizer",
+            vae_checkpoint="vae.pth",
+        )
+        with patch.dict(
+            sys.modules,
+            {
+                "wan": fake_wan,
+                "wan.modules": fake_modules,
+                "wan.modules.t5": fake_t5_module,
+                "wan.modules.vae2_2": fake_vae_module,
+            },
+        ):
+            vae, text_encoder = load_frozen_encoders("checkpoint", config, torch.device("cpu"))
+
+        self.assertTrue(vae.model.eval_called)
+        self.assertEqual(vae.model.requires_grad_value, False)
+        self.assertTrue(text_encoder.model.eval_called)
+        self.assertEqual(text_encoder.model.requires_grad_value, False)
+
     def test_first_latent_slot_stays_clean_and_has_no_loss(self):
         clean = torch.zeros(1, 16, 13, 2, 2)
         batch = make_flow_matching_batch(
