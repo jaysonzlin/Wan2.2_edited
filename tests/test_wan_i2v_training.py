@@ -6,6 +6,8 @@ from unittest.mock import patch
 import torch
 
 from training.wan_i2v_training import (
+    apply_classifier_free_dropout,
+    classifier_free_guidance,
     load_frozen_encoders,
     make_flow_matching_batch,
     masked_velocity_mse,
@@ -13,6 +15,25 @@ from training.wan_i2v_training import (
 
 
 class WanI2VTrainingTests(unittest.TestCase):
+    def test_cfg_scale_one_returns_the_conditional_velocity(self):
+        unconditional = torch.tensor([[-2.0, 3.0]])
+        conditional = torch.tensor([[4.0, -1.0]])
+
+        result = classifier_free_guidance(unconditional, conditional, scale=1.0)
+
+        self.assertTrue(torch.equal(result, conditional))
+
+    def test_classifier_free_dropout_replaces_only_selected_contexts(self):
+        conditional = [torch.tensor([[1.0]]), torch.tensor([[2.0]])]
+        unconditional = [torch.tensor([[0.0]]), torch.tensor([[0.0]])]
+
+        result = apply_classifier_free_dropout(
+            conditional, unconditional, torch.tensor([False, True])
+        )
+
+        self.assertTrue(torch.equal(result[0], conditional[0]))
+        self.assertTrue(torch.equal(result[1], unconditional[1]))
+
     def test_loader_freezes_torch_modules_inside_wan_wrappers(self):
         class InnerModule:
             def __init__(self):

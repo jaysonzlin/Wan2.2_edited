@@ -16,6 +16,31 @@ class FlowMatchingBatch:
     loss_mask: torch.Tensor
 
 
+def apply_classifier_free_dropout(
+    conditional_context: list[torch.Tensor],
+    unconditional_context: list[torch.Tensor],
+    drop_mask: torch.Tensor,
+) -> list[torch.Tensor]:
+    """Replace selected text contexts with their empty-prompt counterparts."""
+    if len(conditional_context) != len(unconditional_context) or len(conditional_context) != len(drop_mask):
+        raise ValueError("CFG contexts and drop_mask must have the same batch length")
+    return [
+        unconditional if should_drop else conditional
+        for conditional, unconditional, should_drop in zip(
+            conditional_context, unconditional_context, drop_mask.tolist()
+        )
+    ]
+
+
+def classifier_free_guidance(
+    unconditional_velocity: torch.Tensor,
+    conditional_velocity: torch.Tensor,
+    scale: float,
+) -> torch.Tensor:
+    """Blend unconditional and conditional velocity predictions using CFG."""
+    return unconditional_velocity + scale * (conditional_velocity - unconditional_velocity)
+
+
 def make_flow_matching_batch(
     clean_latents: torch.Tensor,
     generator: torch.Generator,

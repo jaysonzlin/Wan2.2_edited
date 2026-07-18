@@ -11,6 +11,8 @@ from torch.utils.data import DataLoader
 from training.overfit_config import load_config
 from training.overfit_dataset import KubricI2VOverfitDataset
 from training.wan_i2v_training import (
+    apply_classifier_free_dropout,
+    classifier_free_guidance,
     expand_latent_timesteps,
     load_frozen_encoders,
     load_trainable_dit,
@@ -70,7 +72,7 @@ def _token_timesteps(latent_timesteps: torch.Tensor, latents: torch.Tensor) -> t
 @torch.no_grad()
 def save_visualization(
     model, vae, text_encoder, condition_frame, prompt, output_file, wan_config,
-    time_shift, num_frames, seed,
+    time_shift, num_frames, seed, cfg_scale,
 ) -> None:
     """Generate one deterministic, local-only native TI2V sample."""
     from imageio.v2 import get_writer
@@ -87,7 +89,8 @@ def save_visualization(
         device=device, dtype=condition_latent.dtype, generator=generator,
     )
     latent[:, :1] = condition_latent
-    context = text_encoder([prompt], device)
+    conditional_context = text_encoder([prompt], device)
+    unconditional_context = text_encoder([""], device)
     scheduler = FlowUniPCMultistepScheduler(
         num_train_timesteps=wan_config.num_train_timesteps, shift=1, use_dynamic_shifting=False
     )
@@ -99,10 +102,17 @@ def save_visualization(
                 (1, latent.shape[1]), timestep.item(), device=device, dtype=latent.dtype
             )
             frame_times[:, 0] = 0
-            prediction = model(
+            conditional_velocity = model(
                 [latent], t=_token_timesteps(frame_times, latent.unsqueeze(0)),
-                context=context, seq_len=seq_len,
+                context=conditional_context, seq_len=seq_len,
             )[0]
+            unconditional_velocity = model(
+                [latent], t=_token_timesteps(frame_times, latent.unsqueeze(0)),
+                context=unconditional_context, seq_len=seq_len,
+            )[0]
+            prediction = classifier_free_guidance(
+                unconditional_velocity, conditional_velocity, cfg_scale
+            )
             latent = scheduler.step(
                 prediction.unsqueeze(0), timestep, latent.unsqueeze(0), return_dict=False, generator=generator
             )[0].squeeze(0)
@@ -180,6 +190,12 @@ def main() -> None:
                 clean_latents = _encode_batch(vae, videos)
                 with torch.no_grad():
                     context = text_encoder(list(batch["prompt"]), accelerator.device)
+                    drop_mask = torch.rand(
+                        len(context), device=accelerator.device, generator=generator
+                    ) < training["text_dropout_probability"]
+                    if drop_mask.any():
+                        null_context = text_encoder([""] * len(context), accelerator.device)
+                        context = apply_classifier_free_dropout(context, null_context, drop_mask)
                 flow = make_flow_matching_batch(clean_latents, generator, training["time_shift"], training["num_train_timesteps"])
                 token_times = _token_timesteps(flow.latent_timesteps, clean_latents)
                 with accelerator.autocast():
@@ -217,6 +233,7 @@ def main() -> None:
                 save_visualization(
                     accelerator.unwrap_model(model), vae, text_encoder, videos[0, 0], data["prompt"],
                     visualization_path(output_dir, epoch), ti2v_5B, training["time_shift"], data["num_frames"], training["seed"],
+                    training["visualization_cfg_scale"],
                 )
             if global_step >= training["max_train_steps"]:
                 break
