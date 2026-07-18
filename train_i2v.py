@@ -24,6 +24,20 @@ def visualization_path(output_dir: str | Path, epoch: int) -> Path:
     return Path(output_dir) / "vis" / f"epoch_{epoch:04d}.mp4"
 
 
+def create_progress_bar(total: int, initial: int, enabled: bool):
+    """Create a rank-zero optimizer-step progress bar."""
+    from tqdm.auto import tqdm
+
+    return tqdm(
+        total=total,
+        initial=initial,
+        desc="Training",
+        unit="step",
+        dynamic_ncols=True,
+        disable=not enabled,
+    )
+
+
 def prune_checkpoints(root: str | Path, limit: int) -> None:
     """Keep only the newest numeric Accelerate checkpoint directories."""
     checkpoints = sorted(
@@ -153,6 +167,11 @@ def main() -> None:
         accelerator.load_state(resume_path)
         global_step = int(resume_path.name.removeprefix("checkpoint-"))
     steps_per_epoch = math.ceil(len(dataloader) / training["gradient_accumulation_steps"])
+    progress_bar = create_progress_bar(
+        total=training["max_train_steps"],
+        initial=global_step,
+        enabled=accelerator.is_main_process,
+    )
 
     while global_step < training["max_train_steps"]:
         for batch in dataloader:
@@ -184,6 +203,11 @@ def main() -> None:
                 "train/learning_rate": scheduler.get_last_lr()[0],
                 "train/gradient_norm": gradient_norm.detach().item(),
             }, step=global_step)
+            progress_bar.update(1)
+            progress_bar.set_postfix(
+                loss=f"{loss.detach().item():.4f}",
+                lr=f"{scheduler.get_last_lr()[0]:.2e}",
+            )
             epoch = math.ceil(global_step / steps_per_epoch)
             if global_step % training["checkpoint_every_steps"] == 0:
                 accelerator.save_state(output_dir / f"checkpoint-{global_step}")
@@ -199,6 +223,7 @@ def main() -> None:
     accelerator.wait_for_everyone()
     if accelerator.is_main_process:
         accelerator.unwrap_model(model).save_pretrained(output_dir / "final_dit", safe_serialization=True)
+    progress_bar.close()
     accelerator.end_training()
 
 

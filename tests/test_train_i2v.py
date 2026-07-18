@@ -4,10 +4,18 @@ from pathlib import Path
 import subprocess
 import sys
 
-from train_i2v import prune_checkpoints, visualization_path
+from train_i2v import create_progress_bar, prune_checkpoints, visualization_path
 
 
 class TrainI2VHelperTests(unittest.TestCase):
+    def test_progress_bar_tracks_optimizer_steps(self):
+        progress_bar = create_progress_bar(total=5000, initial=12, enabled=True)
+        try:
+            self.assertEqual(progress_bar.total, 5000)
+            self.assertEqual(progress_bar.n, 12)
+        finally:
+            progress_bar.close()
+
     def test_help_does_not_import_remote_only_training_dependencies(self):
         result = subprocess.run(
             [sys.executable, "train_i2v.py", "--help"],
