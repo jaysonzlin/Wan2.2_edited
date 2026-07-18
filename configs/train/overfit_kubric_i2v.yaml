@@ -7,7 +7,7 @@ data:
   dataloader_num_workers: 4
 
 model:
-  checkpoint_dir: .
+  checkpoint_dir: Wan2.2-TI2V-5B
   freeze_vae: true
   freeze_text_encoder: true
   gradient_checkpointing: true
