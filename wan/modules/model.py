@@ -2,6 +2,7 @@
 import math
 
 import torch
+import torch.utils.checkpoint
 import torch.nn as nn
 from diffusers.configuration_utils import ConfigMixin, register_to_config
 from diffusers.models.modeling_utils import ModelMixin
@@ -72,6 +73,7 @@ class WanRMSNorm(nn.Module):
         super().__init__()
         self.dim = dim
         self.eps = eps
+        self.gradient_checkpointing = False
         self.weight = nn.Parameter(torch.ones(dim))
 
     def forward(self, x):
@@ -487,7 +489,14 @@ class WanModel(ModelMixin, ConfigMixin):
             context_lens=context_lens)
 
         for block in self.blocks:
-            x = block(x, **kwargs)
+            if self.training and self.gradient_checkpointing:
+                x = torch.utils.checkpoint.checkpoint(
+                    lambda hidden_states, module=block: module(hidden_states, **kwargs),
+                    x,
+                    use_reentrant=False,
+                )
+            else:
+                x = block(x, **kwargs)
 
         # head
         x = self.head(x, e)
