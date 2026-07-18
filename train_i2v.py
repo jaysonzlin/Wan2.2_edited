@@ -115,12 +115,12 @@ def _checkpoint_path(output_dir: Path, setting: str | None) -> Path | None:
 
 
 def main() -> None:
+    args = parse_args()
     from accelerate import Accelerator
     from accelerate.utils import set_seed
     from transformers import get_cosine_schedule_with_warmup
     from wan.configs.wan_ti2v_5B import ti2v_5B
 
-    args = parse_args()
     config = load_config(args.config, args.overrides)
     training, data, logging = config["training"], config["data"], config["logging"]
     output_dir = Path(logging["output_dir"])
