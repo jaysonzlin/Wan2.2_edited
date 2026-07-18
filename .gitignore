@@ -5,3 +5,7 @@ tmp_examples*
 new_checkpoint*
 batch_test*
 nohup*
+outputs/
+checkpoints/
+wandb/
+accelerate_state/

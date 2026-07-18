@@ -31,7 +31,7 @@ training:
   resume_from_checkpoint: null
 
 logging:
-  output_dir: outputs/kubric_i2v_overfit
+  output_dir: outputs
   wandb_project: wan22-kubric-overfit
   wandb_run_name: null
   log_every_steps: 1

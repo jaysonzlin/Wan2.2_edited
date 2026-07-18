@@ -1,5 +1,27 @@
 # Wan2.2
 
+## Kubric TI2V overfit training
+
+Run the custom trainer only on the remote H200 machine. It fine-tunes the full
+`Wan-AI/Wan2.2-TI2V-5B` DiT from `training_dataset`, using frame 0 as the I2V
+condition and the caption `Objects moving in a Kubric simulator`.
+
+```bash
+conda env create -f environment_finetune.yml
+conda activate wan2-2-finetune
+export WANDB_API_KEY=your-key
+accelerate launch --config_file configs/accelerate/h200_single_gpu.yaml \
+  train_i2v.py --config configs/train/overfit_kubric_i2v.yaml
+```
+
+Install the CUDA 12.4 PyTorch build in this new environment before launching if
+your Conda setup does not install it from `environment_finetune.yml`. Place the
+base checkpoint at `checkpoints/Wan2.2-TI2V-5B` or override
+`model.checkpoint_dir=...`. Resume the newest saved state with
+`training.resume_from_checkpoint=latest`. Local qualitative samples are saved
+to `outputs/vis/epoch_####.mp4`; only scalar metrics are
+sent to Weights & Biases.
+
 <p align="center">
     <img src="assets/logo.png" width="400"/>
 <p>
