@@ -1,0 +1,15 @@
+name: wan2-2-finetune
+channels:
+  - pytorch
+  - nvidia
+  - conda-forge
+dependencies:
+  - python=3.10
+  - pip
+  - ffmpeg
+  - pytorch=2.5.*
+  - torchvision
+  - torchaudio
+  - pytorch-cuda=12.4
+  - pip:
+      - -r requirements.txt

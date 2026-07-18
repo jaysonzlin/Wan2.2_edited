@@ -1,0 +1,40 @@
+data:
+  dataset_root: training_dataset
+  prompt: Objects moving in a Kubric simulator
+  num_frames: 49
+  width: 1280
+  height: 704
+  dataloader_num_workers: 4
+
+model:
+  checkpoint_dir: checkpoints/Wan2.2-TI2V-5B
+  freeze_vae: true
+  freeze_text_encoder: true
+  gradient_checkpointing: true
+  flash_attention: true
+
+training:
+  seed: 42
+  train_batch_size: 1
+  gradient_accumulation_steps: 4
+  max_train_steps: 5000
+  learning_rate: 1.0e-5
+  weight_decay: 0.01
+  warmup_steps: 200
+  max_grad_norm: 1.0
+  time_shift: 5.0
+  num_train_timesteps: 1000
+  mixed_precision: bf16
+  checkpoint_every_steps: 250
+  checkpoints_total_limit: 3
+  visualization_every_steps: 500
+  resume_from_checkpoint: null
+
+logging:
+  output_dir: outputs/kubric_i2v_overfit
+  wandb_project: wan22-kubric-overfit
+  wandb_run_name: null
+  log_every_steps: 1
+
+validation:
+  enabled: false
