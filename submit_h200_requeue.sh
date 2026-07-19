@@ -3,9 +3,9 @@
 #SBATCH --partition=gpu_requeue
 #SBATCH --constraint=h200
 #SBATCH --gres=gpu:1
-#SBATCH --cpus-per-task=8
+#SBATCH --cpus-per-task=2
 #SBATCH --mem=64G
-#SBATCH --time=04:00:00
+#SBATCH --time=08:00:00
 #SBATCH --requeue
 #SBATCH --open-mode=append
 #SBATCH --output=/net/holy-isilon/ifs/rc_labs/ydu_lab/jaysonzlin/Wan2.2_edited/logs/wan_overfit_%j.out
