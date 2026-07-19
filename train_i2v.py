@@ -128,15 +128,44 @@ def save_visualization(
         model.train()
 
 
-def _checkpoint_path(output_dir: Path, setting: str | None) -> Path | None:
+def _checkpoint_paths(output_dir: Path, setting: str | None) -> list[Path]:
     if not setting:
-        return None
+        return []
     if setting != "latest":
-        return Path(setting)
+        return [Path(setting)]
     checkpoints = sorted(
-        output_dir.glob("checkpoint-*"), key=lambda path: int(path.name.removeprefix("checkpoint-"))
+        (
+            path for path in output_dir.glob("checkpoint-*")
+            if path.is_dir() and path.name.removeprefix("checkpoint-").isdigit()
+        ),
+        key=lambda path: int(path.name.removeprefix("checkpoint-")),
+        reverse=True,
     )
-    return checkpoints[-1] if checkpoints else None
+    return checkpoints
+
+
+def load_checkpoint_with_fallback(accelerator, output_dir: Path, setting: str | None) -> Path | None:
+    """Load the requested state, falling back from incomplete ``latest`` checkpoints."""
+    checkpoints = _checkpoint_paths(output_dir, setting)
+    if not checkpoints:
+        return None
+
+    failed_checkpoints = []
+    for checkpoint in checkpoints:
+        try:
+            accelerator.load_state(checkpoint)
+        except Exception as error:
+            if setting != "latest":
+                raise
+            failed_checkpoints.append((checkpoint, error))
+            print(f"Could not load {checkpoint}; trying the next most recent checkpoint: {error}")
+        else:
+            return checkpoint
+
+    attempted = ", ".join(path.name for path, _ in failed_checkpoints)
+    raise RuntimeError(
+        f"Could not load any checkpoint selected by resume_from_checkpoint=latest: {attempted}"
+    ) from failed_checkpoints[-1][1]
 
 
 def main() -> None:
@@ -177,9 +206,10 @@ def main() -> None:
 
     generator = torch.Generator(device=accelerator.device).manual_seed(training["seed"])
     global_step = 0
-    resume_path = _checkpoint_path(output_dir, training.get("resume_from_checkpoint"))
+    resume_path = load_checkpoint_with_fallback(
+        accelerator, output_dir, training.get("resume_from_checkpoint")
+    )
     if resume_path:
-        accelerator.load_state(resume_path)
         global_step = int(resume_path.name.removeprefix("checkpoint-"))
     steps_per_epoch = math.ceil(len(dataloader) / training["gradient_accumulation_steps"])
     progress_bar = create_progress_bar(
