@@ -21,6 +21,8 @@ training:
   learning_rate: 1.0e-5
   weight_decay: 0.01
   warmup_steps: 200
+  # "constant" retains the learning rate after warmup; "cosine" preserves X-WAM's default.
+  lr_scheduler: cosine
   max_grad_norm: 1.0
   # X-WAM-style classifier-free guidance training: encode an empty prompt for 10% of samples.
   text_dropout_probability: 0.1

@@ -10,6 +10,7 @@ from torch.utils.data import DataLoader
 
 from training.overfit_config import load_config
 from training.overfit_dataset import KubricI2VOverfitDataset
+from training.schedules import create_lr_scheduler
 from training.wan_i2v_training import (
     apply_classifier_free_dropout,
     classifier_free_guidance,
@@ -142,7 +143,7 @@ def main() -> None:
     args = parse_args()
     from accelerate import Accelerator
     from accelerate.utils import set_seed
-    from transformers import get_cosine_schedule_with_warmup
+    from transformers import get_constant_schedule_with_warmup, get_cosine_schedule_with_warmup
     from wan.configs.wan_ti2v_5B import ti2v_5B
 
     config = load_config(args.config, args.overrides)
@@ -167,7 +168,11 @@ def main() -> None:
     vae, text_encoder = load_frozen_encoders(config["model"]["checkpoint_dir"], ti2v_5B, accelerator.device)
     model = load_trainable_dit(config["model"]["checkpoint_dir"], config["model"]["gradient_checkpointing"])
     optimizer = torch.optim.AdamW(model.parameters(), lr=training["learning_rate"], weight_decay=training["weight_decay"])
-    scheduler = get_cosine_schedule_with_warmup(optimizer, training["warmup_steps"], training["max_train_steps"])
+    scheduler = create_lr_scheduler(
+        training["lr_scheduler"], optimizer, training["warmup_steps"], training["max_train_steps"],
+        cosine_factory=get_cosine_schedule_with_warmup,
+        constant_factory=get_constant_schedule_with_warmup,
+    )
     model, optimizer, dataloader, scheduler = accelerator.prepare(model, optimizer, dataloader, scheduler)
 
     generator = torch.Generator(device=accelerator.device).manual_seed(training["seed"])

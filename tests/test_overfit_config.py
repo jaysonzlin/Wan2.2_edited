@@ -3,8 +3,10 @@ import unittest
 from pathlib import Path
 
 import yaml
+import torch
 
 from training.overfit_config import load_config
+from training.schedules import create_lr_scheduler
 
 
 def write_yaml(directory: Path, data: dict) -> Path:
@@ -14,6 +16,26 @@ def write_yaml(directory: Path, data: dict) -> Path:
 
 
 class OverfitConfigTests(unittest.TestCase):
+    def test_constant_scheduler_uses_the_constant_warmup_factory(self):
+        optimizer = torch.optim.AdamW([torch.nn.Parameter(torch.zeros(()))])
+        calls = []
+
+        def cosine_factory(*args):
+            calls.append(("cosine", args))
+            return "cosine"
+
+        def constant_factory(*args):
+            calls.append(("constant", args))
+            return "constant"
+
+        scheduler = create_lr_scheduler(
+            "constant", optimizer, warmup_steps=200, max_train_steps=5000,
+            cosine_factory=cosine_factory, constant_factory=constant_factory,
+        )
+
+        self.assertEqual(scheduler, "constant")
+        self.assertEqual(calls, [("constant", (optimizer, 200))])
+
     def test_dotlist_overrides_win_over_yaml(self):
         with tempfile.TemporaryDirectory() as temporary_directory:
             path = write_yaml(

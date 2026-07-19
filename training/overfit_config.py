@@ -49,6 +49,8 @@ def validate_config(config: dict) -> None:
             raise ValueError("data.num_frames must follow Wan's 4n + 1 temporal format")
 
     training = config.get("training", {})
+    if "lr_scheduler" in training and training["lr_scheduler"] not in {"cosine", "constant"}:
+        raise ValueError("training.lr_scheduler must be either 'cosine' or 'constant'")
     for key in ("max_train_steps", "warmup_steps", "checkpoint_every_steps"):
         if key in training and (
             not isinstance(training[key], int) or training[key] <= 0
