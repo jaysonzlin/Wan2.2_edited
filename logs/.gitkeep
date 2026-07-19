@@ -1,0 +1,1 @@
+This directory must exist before Slurm opens the job's stdout and stderr files.
