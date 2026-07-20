@@ -20,3 +20,6 @@ wandb>=0.19.0
 PyYAML>=6.0
 # Added for Kubric I2V fine-tuning: deterministic RGBA PNG loading.
 Pillow>=10.0
+# Added for point-cloud flow training and trajectory visualization.
+h5py>=3.10
+matplotlib>=3.8

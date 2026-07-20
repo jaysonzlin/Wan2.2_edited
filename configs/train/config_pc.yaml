@@ -1,0 +1,43 @@
+output_dir: ./outputs/pc_flow_8layers
+logging_dir: logs
+vis_dir: vis
+report_to: wandb
+tracker_project_name: pc_flow
+seed: 0
+train_batch_size: 1
+num_train_epochs: 100
+max_train_steps: 60000
+gradient_accumulation_steps: 1
+learning_rate: 1.0e-4
+lr_warmup_steps: 100
+adam_beta1: 0.9
+adam_beta2: 0.999
+adam_weight_decay: 1.0e-2
+adam_epsilon: 1.0e-8
+max_grad_norm: 1.0
+mixed_precision: bf16
+dataloader_num_workers: 8
+checkpointing_steps: 250
+resume_from_checkpoint: null
+condition_drop_rate: 0.0
+data:
+  dataset_root: training_dataset
+  num_frames: 49
+  num_points: 2048
+model:
+  n_layers: 8
+  latent_dim: 256
+  num_heads: 4
+  point_embed: true
+  frame_cond: true
+  transformer_block: SpatialTemporalTransformerBlock
+flow:
+  prediction_type: flow
+  time_shift: 5.0
+  num_train_timesteps: 1000
+sampling:
+  num_inference_steps: 50
+  solver_order: 3
+visualization:
+  every_epochs: 100
+  fps: 12

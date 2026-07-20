@@ -27,7 +27,9 @@ dependencies = [
     "dashscope",
     "imageio-ffmpeg",
     "flash_attn",
-    "numpy>=1.23.5,<2"
+    "numpy>=1.23.5,<2",
+    "h5py>=3.10",
+    "matplotlib>=3.8",
 ]
 
 [project.optional-dependencies]
@@ -62,5 +64,3 @@ profile = "black"
 
 [tool.mypy]
 strict = true
-
-
