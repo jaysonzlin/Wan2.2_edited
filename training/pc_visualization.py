@@ -7,6 +7,28 @@ import matplotlib.pyplot as plt
 import numpy as np
 
 
+def compute_point_colors(pc_data: np.ndarray) -> np.ndarray:
+    """Return Viridis RGBA colors from each object's initial-frame height."""
+    initial_heights = np.asarray(pc_data)[0, :, :, 2]
+    minimum = initial_heights.min(axis=1, keepdims=True)
+    height_range = np.ptp(initial_heights, axis=1, keepdims=True)
+    normalized = np.full(initial_heights.shape, 0.5, dtype=np.float64)
+    np.divide(initial_heights - minimum, height_range, out=normalized, where=height_range > 0)
+    return plt.get_cmap("viridis")(normalized)
+
+
+def compute_trajectory_errors(
+    prediction: np.ndarray, ground_truth: np.ndarray
+) -> tuple[np.ndarray, np.ndarray]:
+    """Return per-frame centroid position error and mean per-point error."""
+    prediction, ground_truth = np.asarray(prediction), np.asarray(ground_truth)
+    if prediction.shape != ground_truth.shape or prediction.ndim != 4 or prediction.shape[-1] != 3:
+        raise ValueError("prediction and ground_truth must share shape (frames, objects, points, 3)")
+    center_error = np.linalg.norm(prediction.mean(axis=2) - ground_truth.mean(axis=2), axis=-1)
+    point_error = np.linalg.norm(prediction - ground_truth, axis=-1)
+    return center_error.mean(axis=1), point_error.mean(axis=(1, 2))
+
+
 def save_pointcloud_comparison_mp4(prediction, ground_truth, output_path, fps: int = 12) -> None:
     prediction, ground_truth = np.asarray(prediction), np.asarray(ground_truth)
     if prediction.shape != ground_truth.shape or prediction.ndim != 4 or prediction.shape[-1] != 3:
