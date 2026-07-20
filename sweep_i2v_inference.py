@@ -32,6 +32,12 @@ def output_name(shift: int, num_steps: int) -> str:
     return f"shift_{shift}_steps_{num_steps}.mp4"
 
 
+def configure_scheduler(scheduler, num_steps: int, device, shift: int) -> None:
+    """Configure sampling from the first sigma, including duplicate timesteps."""
+    scheduler.set_timesteps(num_steps, device=device, shift=shift)
+    scheduler.set_begin_index(0)
+
+
 def parse_args() -> argparse.Namespace:
     """Parse lightweight utility options without importing CUDA dependencies."""
     parser = argparse.ArgumentParser(description=__doc__)
@@ -104,7 +110,7 @@ def main() -> None:
                 shift=1,
                 use_dynamic_shifting=False,
             )
-            scheduler.set_timesteps(num_steps, device=device, shift=shift)
+            configure_scheduler(scheduler, num_steps, device, shift)
             seq_len = (
                 latent.shape[1]
                 * (latent.shape[-2] // 2)
