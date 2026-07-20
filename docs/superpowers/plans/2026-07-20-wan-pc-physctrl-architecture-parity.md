@@ -161,7 +161,7 @@ def test_timestep_embedding_uses_cogvideox_cos_then_sin_frequencies():
         module.linear_2.weight.copy_(torch.eye(8)); module.linear_2.bias.zero_()
     times = torch.tensor([[0.0, 2.0]])
     half = 4
-    frequency = torch.exp(-torch.log(torch.tensor(10000.0)) * torch.arange(half) / (half - 1))
+    frequency = torch.exp(-torch.log(torch.tensor(10000.0)) * torch.arange(half) / half)
     raw = torch.cat(((times[..., None] * frequency).cos(), (times[..., None] * frequency).sin()), dim=-1)
     torch.testing.assert_close(module(times), torch.nn.functional.silu(raw), atol=1e-6, rtol=1e-6)
 ```
@@ -206,7 +206,7 @@ class PhysCtrlTimestepEmbedding(nn.Module):
 
     def forward(self, timesteps: torch.Tensor) -> torch.Tensor:
         half = self.dim // 2
-        frequencies = torch.exp(-math.log(10000) * torch.arange(half, device=timesteps.device, dtype=torch.float32) / (half - 1))
+        frequencies = torch.exp(-math.log(10000) * torch.arange(half, device=timesteps.device, dtype=torch.float32) / half)
         angles = timesteps.float()[..., None] * frequencies
         embedding = torch.cat((angles.cos(), angles.sin()), dim=-1).to(timesteps.dtype)
         return self.linear_2(self.act(self.linear_1(embedding)))
