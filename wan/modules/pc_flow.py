@@ -124,7 +124,8 @@ class PCFlowModel(nn.Module):
             raise ValueError("frame_times[:, 0] must be zero")
         if initial_linear_velocity.shape != (b, 1, 3) or initial_angular_velocity.shape != (b, 1, 3):
             raise ValueError("initial velocities must have shape (B, 1, 3)")
-        coordinates = torch.cat((init_pc.unsqueeze(1), noisy_displacements), dim=1).squeeze(2)
+        future_positions = init_pc.unsqueeze(1) + noisy_displacements
+        coordinates = torch.cat((init_pc.unsqueeze(1), future_positions), dim=1).squeeze(2)
         points = self.input_encoder(coordinates.reshape(-1, self.n_points, 3)).reshape(b, self.n_future_frames + 1, self.n_points, self.latent_dim)
         points = points + self.point_position[None, None] + self.frame_position[None, :, None]
         conditions = torch.stack((self.linear_velocity_encoder(initial_linear_velocity.squeeze(1)), self.angular_velocity_encoder(initial_angular_velocity.squeeze(1))), dim=1)

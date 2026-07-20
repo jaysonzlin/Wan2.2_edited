@@ -42,6 +42,34 @@ def test_model_rejects_nonzero_source_time():
         )
 
 
+def test_model_embeds_future_flow_states_as_absolute_positions():
+    model = make_tiny_model()
+    captured = {}
+
+    def capture_coordinates(_module, inputs):
+        captured["coordinates"] = inputs[0].detach().clone()
+
+    handle = model.input_encoder.register_forward_pre_hook(capture_coordinates)
+    initial = torch.full((1, 1, 8, 3), 10.0)
+    flow_state = torch.full((1, 48, 1, 8, 3), 2.0)
+    try:
+        model(
+            flow_state,
+            torch.tensor([[0.0] + [500.0] * 48]),
+            initial,
+            torch.zeros(1, 1, 3),
+            torch.zeros(1, 1, 3),
+        )
+    finally:
+        handle.remove()
+
+    embedded_frames = captured["coordinates"].reshape(1, 49, 8, 3)
+    assert torch.equal(embedded_frames[:, :1], initial)
+    assert torch.equal(
+        embedded_frames[:, 1:], torch.full_like(flow_state.squeeze(2), 12.0)
+    )
+
+
 def test_zero_flow_head_never_adds_source_coordinates():
     model = make_tiny_model()
     torch.nn.init.zeros_(model.flow_head.projection.weight)
