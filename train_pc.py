@@ -17,6 +17,20 @@ def visualization_path(output_dir: str | Path, vis_dir: str, epoch: int) -> Path
     return Path(output_dir) / vis_dir / f"epoch_{epoch:04d}.mp4"
 
 
+def create_progress_bar(total: int, initial: int, enabled: bool):
+    """Create a rank-zero progress bar over synchronized optimizer updates."""
+    from tqdm.auto import tqdm
+
+    return tqdm(
+        total=total,
+        initial=initial,
+        desc="Training",
+        unit="step",
+        dynamic_ncols=True,
+        disable=not enabled,
+    )
+
+
 def main(config=None) -> None:
     if config is None:
         args = parse_args()
@@ -50,6 +64,11 @@ def main(config=None) -> None:
     model, optimizer, loader, scheduler = accelerator.prepare(model, optimizer, loader, scheduler)
     generator = torch.Generator(device=accelerator.device).manual_seed(config["seed"])
     step = 0
+    progress_bar = create_progress_bar(
+        total=config["max_train_steps"],
+        initial=step,
+        enabled=accelerator.is_main_process,
+    )
     while step < config["max_train_steps"]:
         for batch in loader:
             with accelerator.accumulate(model):
@@ -63,11 +82,17 @@ def main(config=None) -> None:
                 optimizer.step(); scheduler.step(); optimizer.zero_grad(set_to_none=True)
             if accelerator.sync_gradients:
                 step += 1
+                progress_bar.update(1)
+                progress_bar.set_postfix(
+                    loss=f"{loss.detach().item():.4f}",
+                    lr=f"{scheduler.get_last_lr()[0]:.2e}",
+                )
                 accelerator.log({"train/loss": loss.detach().item(), "train/learning_rate": scheduler.get_last_lr()[0]}, step=step)
                 if step % config["checkpointing_steps"] == 0:
                     accelerator.save_state(output_dir / f"checkpoint-{step}")
                 if step >= config["max_train_steps"]:
                     break
+    progress_bar.close()
     accelerator.end_training()
 
 
