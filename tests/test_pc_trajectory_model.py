@@ -1,11 +1,11 @@
 import pytest
 import torch
 
-from wan.modules.pc_flow import PCFlowModel
+from wan.modules.pc_trajectory import PCTrajectoryModel
 
 
 def make_tiny_model(objective_type="flow"):
-    return PCFlowModel(
+    return PCTrajectoryModel(
         n_points=8,
         n_future_frames=48,
         latent_dim=64,
@@ -71,10 +71,10 @@ def test_model_embeds_future_flow_states_as_absolute_positions():
     )
 
 
-def test_zero_flow_head_never_adds_source_coordinates():
+def test_zero_output_head_never_adds_source_coordinates():
     model = make_tiny_model()
-    torch.nn.init.zeros_(model.flow_head.projection.weight)
-    torch.nn.init.zeros_(model.flow_head.projection.bias)
+    torch.nn.init.zeros_(model.output_head.projection.weight)
+    torch.nn.init.zeros_(model.output_head.projection.bias)
 
     output = model(
         torch.zeros(1, 48, 1, 8, 3),
@@ -89,8 +89,8 @@ def test_zero_flow_head_never_adds_source_coordinates():
 
 def test_ddpm_model_adds_source_to_zero_predicted_offset():
     model = make_tiny_model(objective_type="ddpm")
-    torch.nn.init.zeros_(model.flow_head.projection.weight)
-    torch.nn.init.zeros_(model.flow_head.projection.bias)
+    torch.nn.init.zeros_(model.output_head.projection.weight)
+    torch.nn.init.zeros_(model.output_head.projection.bias)
     source = torch.full((1, 1, 8, 3), 9.0)
 
     output = model(

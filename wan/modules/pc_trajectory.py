@@ -88,7 +88,7 @@ class PCSpatialTemporalBlock(nn.Module):
         return tracks.reshape(b, count, frames, dim).permute(0, 2, 1, 3), conditions
 
 
-class PCFlowHead(nn.Module):
+class PCOutputHead(nn.Module):
     def __init__(self, dim: int):
         super().__init__()
         self.norm = nn.LayerNorm(dim)
@@ -100,7 +100,7 @@ class PCFlowHead(nn.Module):
         return self.projection(self.norm(points) * (1 + scale[:, :, None]) + shift[:, :, None])
 
 
-class PCFlowModel(nn.Module):
+class PCTrajectoryModel(nn.Module):
     def __init__(self, n_points=2048, n_future_frames=48, latent_dim=256, n_layers=8, num_heads=4, point_embed=True, objective_type="flow"):
         super().__init__()
         if objective_type not in {"flow", "ddpm"}:
@@ -110,15 +110,15 @@ class PCFlowModel(nn.Module):
         self.input_encoder = PointEmbed(latent_dim) if point_embed else nn.Linear(3, latent_dim)
         self.linear_velocity_encoder, self.angular_velocity_encoder = nn.Linear(3, latent_dim), nn.Linear(3, latent_dim)
         self.blocks = nn.ModuleList(PCSpatialTemporalBlock(latent_dim, num_heads) for _ in range(n_layers))
-        self.flow_head = PCFlowHead(latent_dim)
+        self.output_head = PCOutputHead(latent_dim)
         self.register_buffer("point_position", _sinusoidal(torch.arange(n_points).float(), latent_dim), persistent=False)
         self.register_buffer("frame_position", _sinusoidal(torch.arange(n_future_frames + 1).float(), latent_dim), persistent=False)
 
-    def forward(self, noisy_displacements, frame_times, init_pc, initial_linear_velocity, initial_angular_velocity):
-        b = noisy_displacements.shape[0]
+    def forward(self, noisy_future_state, frame_times, init_pc, initial_linear_velocity, initial_angular_velocity):
+        b = noisy_future_state.shape[0]
         expected = (b, self.n_future_frames, 1, self.n_points, 3)
-        if noisy_displacements.shape != expected:
-            raise ValueError(f"noisy_displacements must have shape {expected}")
+        if noisy_future_state.shape != expected:
+            raise ValueError(f"noisy_future_state must have shape {expected}")
         if init_pc.shape != (b, 1, self.n_points, 3):
             raise ValueError("init_pc must have shape (B, 1, N, 3)")
         if frame_times.shape != (b, self.n_future_frames + 1):
@@ -127,7 +127,7 @@ class PCFlowModel(nn.Module):
             raise ValueError("frame_times[:, 0] must be zero")
         if initial_linear_velocity.shape != (b, 1, 3) or initial_angular_velocity.shape != (b, 1, 3):
             raise ValueError("initial velocities must have shape (B, 1, 3)")
-        future_positions = init_pc.unsqueeze(1) + noisy_displacements if self.objective_type == "flow" else noisy_displacements
+        future_positions = init_pc.unsqueeze(1) + noisy_future_state if self.objective_type == "flow" else noisy_future_state
         coordinates = torch.cat((init_pc.unsqueeze(1), future_positions), dim=1).squeeze(2)
         points = self.input_encoder(coordinates.reshape(-1, self.n_points, 3)).reshape(b, self.n_future_frames + 1, self.n_points, self.latent_dim)
         points = points + self.point_position[None, None] + self.frame_position[None, :, None]
@@ -135,5 +135,5 @@ class PCFlowModel(nn.Module):
         conditions = conditions[:, None].expand(-1, self.n_future_frames + 1, -1, -1)
         for block in self.blocks:
             points, conditions = block(points, conditions, frame_times)
-        output = self.flow_head(points[:, 1:], frame_times[:, 1:]).unsqueeze(2)
+        output = self.output_head(points[:, 1:], frame_times[:, 1:]).unsqueeze(2)
         return output if self.objective_type == "flow" else output + init_pc.unsqueeze(1)

@@ -1,8 +1,8 @@
-output_dir: ./outputs/pc_flow_8layers
+output_dir: ./outputs/pc_trajectory_8layers
 logging_dir: logs
 vis_dir: vis
 report_to: wandb
-tracker_project_name: pc_flow
+tracker_project_name: pc_trajectory
 seed: 0
 train_batch_size: 1
 num_train_epochs: 1000

@@ -70,10 +70,10 @@ def main(config=None) -> None:
     from transformers import get_constant_schedule_with_warmup, get_cosine_schedule_with_warmup
     from training.pc_dataset import PCTrajectoryDataset
     from training.pc_ddpm import make_pc_ddpm_batch
-    from training.pc_flow import flow_mse, make_pc_flow_batch
+    from training.pc_objectives import make_pc_flow_batch, mse_loss
     from training.schedules import create_lr_scheduler
     from training.pc_visualization import save_pointcloud_comparison_mp4
-    from wan.modules.pc_flow import PCFlowModel
+    from wan.modules.pc_trajectory import PCTrajectoryModel
     from wan.pc_pipeline import PCDDIMPipeline, PCFlowPipeline
     from wan.utils.fm_solvers_unipc import FlowUniPCMultistepScheduler
 
@@ -92,7 +92,7 @@ def main(config=None) -> None:
     loader = DataLoader(dataset, batch_size=config["train_batch_size"], shuffle=True, num_workers=config["dataloader_num_workers"])
     model_config = config["model"]
     objective = config["objective"]
-    model = PCFlowModel(n_points=config["data"]["num_points"], n_future_frames=48, latent_dim=model_config["latent_dim"], n_layers=model_config["n_layers"], num_heads=model_config["num_heads"], point_embed=model_config["point_embed"], objective_type=objective["type"])
+    model = PCTrajectoryModel(n_points=config["data"]["num_points"], n_future_frames=48, latent_dim=model_config["latent_dim"], n_layers=model_config["n_layers"], num_heads=model_config["num_heads"], point_embed=model_config["point_embed"], objective_type=objective["type"])
     noise_scheduler = create_pc_noise_scheduler(objective)
     optimizer = torch.optim.AdamW(model.parameters(), lr=config["learning_rate"], betas=(config["adam_beta1"], config["adam_beta2"]), weight_decay=config["adam_weight_decay"], eps=config["adam_epsilon"])
     scheduler = create_lr_scheduler(
@@ -129,7 +129,7 @@ def main(config=None) -> None:
                     target_batch = make_pc_ddpm_batch(batch["points_tgt"].to(accelerator.device), noise_scheduler, generator)
                     target = target_batch.target
                 prediction = model(target_batch.model_input, target_batch.frame_times, source, batch["initial_linear_velocity"].to(accelerator.device), batch["initial_angular_velocity"].to(accelerator.device))
-                loss = flow_mse(prediction, target)
+                loss = mse_loss(prediction, target)
                 accelerator.backward(loss)
                 if accelerator.sync_gradients:
                     accelerator.clip_grad_norm_(model.parameters(), config["max_grad_norm"])

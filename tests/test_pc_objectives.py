@@ -1,6 +1,6 @@
 import torch
 
-from training.pc_flow import make_pc_flow_batch
+from training.pc_objectives import make_pc_flow_batch
 
 
 def test_flow_batch_uses_displacements_and_source_time_zero():

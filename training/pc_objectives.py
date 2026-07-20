@@ -50,8 +50,8 @@ def make_pc_flow_batch(
     return PCFlowBatch(model_input, noise - displacements, frame_times)
 
 
-def flow_mse(prediction: torch.Tensor, target: torch.Tensor) -> torch.Tensor:
-    """Return a shape-safe mean-squared flow loss."""
+def mse_loss(prediction: torch.Tensor, target: torch.Tensor) -> torch.Tensor:
+    """Return a shape-safe objective mean-squared loss."""
     if prediction.shape != target.shape:
         raise ValueError("prediction and target must have identical shapes")
     return F.mse_loss(prediction, target)
