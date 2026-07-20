@@ -38,6 +38,12 @@ def create_progress_bar(total: int, initial: int, enabled: bool):
     )
 
 
+def initialize_trackers(accelerator, config: dict) -> None:
+    """Initialize the configured experiment tracker before logging metrics."""
+    if config.get("report_to"):
+        accelerator.init_trackers(config["tracker_project_name"], config=config)
+
+
 def main(config=None) -> None:
     if config is None:
         args = parse_args()
@@ -65,6 +71,7 @@ def main(config=None) -> None:
         mixed_precision=config["mixed_precision"],
         log_with=config["report_to"] if config["report_to"] else None,
     )
+    initialize_trackers(accelerator, config)
     set_seed(config["seed"])
     dataset = PCTrajectoryDataset(config["data"]["dataset_root"])
     loader = DataLoader(dataset, batch_size=config["train_batch_size"], shuffle=True, num_workers=config["dataloader_num_workers"])

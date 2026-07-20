@@ -2,7 +2,12 @@ import subprocess
 import sys
 from pathlib import Path
 
-from train_pc import create_progress_bar, should_save_visualization, visualization_path
+from train_pc import (
+    create_progress_bar,
+    initialize_trackers,
+    should_save_visualization,
+    visualization_path,
+)
 
 
 def test_train_pc_help_is_local_only():
@@ -31,6 +36,22 @@ def test_visualization_cadence_uses_completed_epochs():
     assert not should_save_visualization(epoch=1, every_epochs=2)
     assert should_save_visualization(epoch=2, every_epochs=2)
     assert should_save_visualization(epoch=3, every_epochs=3)
+
+
+def test_initialize_trackers_uses_the_configured_wandb_project():
+    class FakeAccelerator:
+        def __init__(self):
+            self.calls = []
+
+        def init_trackers(self, project_name, config):
+            self.calls.append((project_name, config))
+
+    config = {"tracker_project_name": "pc_flow", "report_to": "wandb"}
+    accelerator = FakeAccelerator()
+
+    initialize_trackers(accelerator, config)
+
+    assert accelerator.calls == [("pc_flow", config)]
 
 
 def test_readme_documents_pc_flow_entrypoint():
