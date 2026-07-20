@@ -22,6 +22,21 @@ base checkpoint at `checkpoints/Wan2.2-TI2V-5B` or override
 to `outputs/vis/epoch_####.mp4`; only scalar metrics are
 sent to Weights & Biases.
 
+## Point-cloud flow training
+
+Train the Wan-native PC flow model from the HDF5 trajectories stored under
+`training_dataset/sample_*/pc.hdf5`:
+
+```bash
+accelerate launch --config_file configs/accelerate/h200_single_gpu.yaml \
+  train_pc.py --config configs/train/config_pc.yaml
+```
+
+Each file must contain `point_cloud` with shape `(49, 1, 2048, 3)` and
+`initial_linear_velocity` and `initial_angular_velocity`, both with shape
+`(1, 3)`. The workflow writes checkpoints below `outputs/pc_flow_8layers` and
+predicted-versus-ground-truth MP4 comparisons below that run's `vis/` directory.
+
 <p align="center">
     <img src="assets/logo.png" width="400"/>
 <p>
