@@ -11,7 +11,7 @@ def make_tiny_model(objective_type="flow"):
         latent_dim=64,
         n_layers=1,
         num_heads=1,
-        point_embed=False,
+        point_embed=True,
         objective_type=objective_type,
     )
 
@@ -102,3 +102,55 @@ def test_ddpm_model_adds_source_to_zero_predicted_offset():
     )
 
     assert torch.equal(output, source.unsqueeze(1).expand_as(output))
+
+
+def test_default_ddpm_reuses_one_timestep_embedding_at_all_49_frames():
+    model = make_tiny_model(objective_type="ddpm")
+    captured = {}
+    handle = model.time_embedding.register_forward_hook(
+        lambda _module, _inputs, output: captured.setdefault("temb", output.detach().clone())
+    )
+    try:
+        model(
+            torch.zeros(1, 48, 1, 8, 3),
+            torch.full((1, 49), 123.0),
+            torch.zeros(1, 1, 8, 3),
+            torch.zeros(1, 1, 3),
+            torch.zeros(1, 1, 3),
+        )
+    finally:
+        handle.remove()
+
+    assert captured["temb"].shape == (1, 49, 64)
+    assert torch.equal(
+        captured["temb"][:, :1].expand_as(captured["temb"]), captured["temb"]
+    )
+
+
+def test_parity_backbone_has_no_dropout_or_wan_rms_norm_modules():
+    model = make_tiny_model(objective_type="ddpm")
+
+    names = {type(module).__name__ for module in model.modules()}
+
+    assert "Dropout" not in names
+    assert "WanRMSNorm" not in names
+
+
+def test_model_rejects_non_physctrl_head_width_or_point_encoder():
+    with pytest.raises(ValueError, match="num_heads must equal latent_dim // 64"):
+        PCTrajectoryModel(
+            n_points=8,
+            n_future_frames=48,
+            latent_dim=64,
+            n_layers=1,
+            num_heads=2,
+        )
+    with pytest.raises(ValueError, match="point_embed must be true"):
+        PCTrajectoryModel(
+            n_points=8,
+            n_future_frames=48,
+            latent_dim=64,
+            n_layers=1,
+            num_heads=1,
+            point_embed=False,
+        )

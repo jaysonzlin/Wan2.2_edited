@@ -186,3 +186,16 @@ class PhysCtrlSpatialTemporalBlock(nn.Module):
         points = tracks.reshape(batch, count, frames, dim).permute(0, 2, 1, 3)
         controls = flat_controls.reshape(batch, frames, 2, dim)
         return points, controls
+
+
+class PhysCtrlOutputHead(nn.Module):
+    """PhysCtrl's final LayerNorm, timestep AdaLN, and XYZ projection."""
+
+    def __init__(self, dim: int):
+        super().__init__()
+        self.norm_final = nn.LayerNorm(dim, eps=1e-5)
+        self.norm_out = PhysCtrlAdaLayerNorm(dim)
+        self.projection = nn.Linear(dim, 3)
+
+    def forward(self, points: torch.Tensor, temb: torch.Tensor) -> torch.Tensor:
+        return self.projection(self.norm_out(self.norm_final(points), temb))
