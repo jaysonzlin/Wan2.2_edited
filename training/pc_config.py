@@ -46,8 +46,18 @@ def validate_pc_config(config: dict) -> None:
         raise ValueError("data.num_frames must be 49")
     if data.get("num_points") != 2048:
         raise ValueError("data.num_points must be 2048")
+    if model.get("num_heads") != model.get("latent_dim", 0) // 64:
+        raise ValueError("model.num_heads must equal model.latent_dim // 64")
     if (model.get("n_layers"), model.get("latent_dim"), model.get("num_heads")) != (8, 256, 4):
         raise ValueError("model must be 8 layers, width 256, and 4 heads")
+    if model.get("point_embed") is not True:
+        raise ValueError("model.point_embed must be true")
+    if model.get("frame_cond") is not True:
+        raise ValueError("model.frame_cond must be true")
+    if model.get("transformer_block") != "SpatialTemporalTransformerBlock":
+        raise ValueError(
+            "model.transformer_block must be 'SpatialTemporalTransformerBlock'"
+        )
     if objective.get("type") not in {"flow", "ddpm"}:
         raise ValueError("objective.type must be 'flow' or 'ddpm'")
     if not isinstance(objective.get("num_train_timesteps"), int) or objective["num_train_timesteps"] <= 0:
