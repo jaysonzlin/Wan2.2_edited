@@ -44,6 +44,19 @@ def initialize_trackers(accelerator, config: dict) -> None:
         accelerator.init_trackers(config["tracker_project_name"], config=config)
 
 
+def create_pc_noise_scheduler(objective: dict):
+    if objective["type"] == "flow":
+        return None
+    from diffusers import DDPMScheduler
+
+    return DDPMScheduler(
+        num_train_timesteps=objective["num_train_timesteps"],
+        beta_schedule=objective["beta_schedule"],
+        prediction_type="sample",
+        clip_sample=False,
+    )
+
+
 def main(config=None) -> None:
     if config is None:
         args = parse_args()
@@ -53,13 +66,15 @@ def main(config=None) -> None:
     from accelerate import Accelerator
     from accelerate.utils import set_seed
     from torch.utils.data import DataLoader
+    from diffusers import DDIMScheduler
     from transformers import get_constant_schedule_with_warmup, get_cosine_schedule_with_warmup
     from training.pc_dataset import PCTrajectoryDataset
+    from training.pc_ddpm import make_pc_ddpm_batch
     from training.pc_flow import flow_mse, make_pc_flow_batch
     from training.schedules import create_lr_scheduler
     from training.pc_visualization import save_pointcloud_comparison_mp4
     from wan.modules.pc_flow import PCFlowModel
-    from wan.pc_pipeline import PCFlowPipeline
+    from wan.pc_pipeline import PCDDIMPipeline, PCFlowPipeline
     from wan.utils.fm_solvers_unipc import FlowUniPCMultistepScheduler
 
     output_dir = Path(config["output_dir"])
@@ -76,7 +91,9 @@ def main(config=None) -> None:
     dataset = PCTrajectoryDataset(config["data"]["dataset_root"])
     loader = DataLoader(dataset, batch_size=config["train_batch_size"], shuffle=True, num_workers=config["dataloader_num_workers"])
     model_config = config["model"]
-    model = PCFlowModel(n_points=config["data"]["num_points"], n_future_frames=48, latent_dim=model_config["latent_dim"], n_layers=model_config["n_layers"], num_heads=model_config["num_heads"], point_embed=model_config["point_embed"])
+    objective = config["objective"]
+    model = PCFlowModel(n_points=config["data"]["num_points"], n_future_frames=48, latent_dim=model_config["latent_dim"], n_layers=model_config["n_layers"], num_heads=model_config["num_heads"], point_embed=model_config["point_embed"], objective_type=objective["type"])
+    noise_scheduler = create_pc_noise_scheduler(objective)
     optimizer = torch.optim.AdamW(model.parameters(), lr=config["learning_rate"], betas=(config["adam_beta1"], config["adam_beta2"]), weight_decay=config["adam_weight_decay"], eps=config["adam_epsilon"])
     scheduler = create_lr_scheduler(
         config["lr_scheduler"],
@@ -105,9 +122,14 @@ def main(config=None) -> None:
                 }
             with accelerator.accumulate(model):
                 source = batch["points_src"].to(accelerator.device)
-                flow = make_pc_flow_batch(batch["points_tgt"].to(accelerator.device), source, generator, config["flow"]["time_shift"], config["flow"]["num_train_timesteps"])
-                prediction = model(flow.model_input, flow.frame_times, source, batch["initial_linear_velocity"].to(accelerator.device), batch["initial_angular_velocity"].to(accelerator.device))
-                loss = flow_mse(prediction, flow.velocity_target)
+                if objective["type"] == "flow":
+                    target_batch = make_pc_flow_batch(batch["points_tgt"].to(accelerator.device), source, generator, objective["time_shift"], objective["num_train_timesteps"])
+                    target = target_batch.velocity_target
+                else:
+                    target_batch = make_pc_ddpm_batch(batch["points_tgt"].to(accelerator.device), noise_scheduler, generator)
+                    target = target_batch.target
+                prediction = model(target_batch.model_input, target_batch.frame_times, source, batch["initial_linear_velocity"].to(accelerator.device), batch["initial_angular_velocity"].to(accelerator.device))
+                loss = flow_mse(prediction, target)
                 accelerator.backward(loss)
                 if accelerator.sync_gradients:
                     accelerator.clip_grad_norm_(model.parameters(), config["max_grad_norm"])
@@ -134,16 +156,10 @@ def main(config=None) -> None:
             unwrapped_model = accelerator.unwrap_model(model)
             was_training = unwrapped_model.training
             unwrapped_model.eval()
-            pipeline = PCFlowPipeline(
-                unwrapped_model,
-                FlowUniPCMultistepScheduler(
-                    num_train_timesteps=config["flow"]["num_train_timesteps"],
-                    solver_order=config["sampling"]["solver_order"],
-                    prediction_type="flow_prediction",
-                    shift=1,
-                    use_dynamic_shifting=False,
-                ),
-                time_shift=config["flow"]["time_shift"],
+            pipeline = (
+                PCFlowPipeline(unwrapped_model, FlowUniPCMultistepScheduler(num_train_timesteps=objective["num_train_timesteps"], solver_order=config["sampling"]["solver_order"], prediction_type="flow_prediction", shift=1, use_dynamic_shifting=False), time_shift=objective["time_shift"])
+                if objective["type"] == "flow"
+                else PCDDIMPipeline(unwrapped_model, DDIMScheduler.from_config(noise_scheduler.config))
             )
             predicted_future = pipeline(
                 visualization_batch["points_src"],

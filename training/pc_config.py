@@ -41,16 +41,20 @@ def validate_pc_config(config: dict) -> None:
     """Reject values that violate the fixed PC architecture contract."""
     data = config.get("data", {})
     model = config.get("model", {})
-    flow = config.get("flow", {})
+    objective = config.get("objective", {})
     if data.get("num_frames") != 49:
         raise ValueError("data.num_frames must be 49")
     if data.get("num_points") != 2048:
         raise ValueError("data.num_points must be 2048")
     if (model.get("n_layers"), model.get("latent_dim"), model.get("num_heads")) != (8, 256, 4):
         raise ValueError("model must be 8 layers, width 256, and 4 heads")
-    if flow.get("prediction_type") != "flow":
-        raise ValueError("flow.prediction_type must be 'flow'")
-    if not isinstance(flow.get("time_shift"), (int, float)) or flow["time_shift"] <= 0:
-        raise ValueError("flow.time_shift must be positive")
+    if objective.get("type") not in {"flow", "ddpm"}:
+        raise ValueError("objective.type must be 'flow' or 'ddpm'")
+    if not isinstance(objective.get("num_train_timesteps"), int) or objective["num_train_timesteps"] <= 0:
+        raise ValueError("objective.num_train_timesteps must be positive")
+    if not isinstance(objective.get("time_shift"), (int, float)) or objective["time_shift"] <= 0:
+        raise ValueError("objective.time_shift must be positive")
+    if objective["type"] == "ddpm" and objective.get("beta_schedule") != "linear":
+        raise ValueError("DDPM objective.beta_schedule must be 'linear'")
     if config.get("lr_scheduler") not in {"cosine", "constant"}:
         raise ValueError("lr_scheduler must be 'cosine' or 'constant'")

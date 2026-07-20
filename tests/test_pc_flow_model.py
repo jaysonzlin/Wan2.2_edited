@@ -4,7 +4,7 @@ import torch
 from wan.modules.pc_flow import PCFlowModel
 
 
-def make_tiny_model():
+def make_tiny_model(objective_type="flow"):
     return PCFlowModel(
         n_points=8,
         n_future_frames=48,
@@ -12,6 +12,7 @@ def make_tiny_model():
         n_layers=1,
         num_heads=1,
         point_embed=False,
+        objective_type=objective_type,
     )
 
 
@@ -84,3 +85,20 @@ def test_zero_flow_head_never_adds_source_coordinates():
     )
 
     assert torch.equal(output, torch.zeros_like(output))
+
+
+def test_ddpm_model_adds_source_to_zero_predicted_offset():
+    model = make_tiny_model(objective_type="ddpm")
+    torch.nn.init.zeros_(model.flow_head.projection.weight)
+    torch.nn.init.zeros_(model.flow_head.projection.bias)
+    source = torch.full((1, 1, 8, 3), 9.0)
+
+    output = model(
+        torch.zeros(1, 48, 1, 8, 3),
+        torch.full((1, 49), 500.0),
+        source,
+        torch.zeros(1, 1, 3),
+        torch.zeros(1, 1, 3),
+    )
+
+    assert torch.equal(output, source.unsqueeze(1).expand_as(output))

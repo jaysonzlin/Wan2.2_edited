@@ -20,7 +20,7 @@ objective:
 
 `type` accepts `ddpm` and `flow`.  `time_shift` is used only by flow training
 and flow sampling.  Existing `sampling.num_inference_steps` remains shared;
-`sampling.solver_order` is used only by UniPC flow sampling.
+`sampling.solver_order` is used only by UniPC flow sampling. Add comments in config.yaml to indicate this.
 
 ## Shared model
 

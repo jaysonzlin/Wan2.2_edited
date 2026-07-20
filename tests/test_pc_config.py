@@ -8,11 +8,11 @@ def test_pc_config_accepts_the_fixed_contract(tmp_path):
     path.write_text(
         "data:\n  dataset_root: training_dataset\n  num_frames: 49\n  num_points: 2048\n"
         "model:\n  n_layers: 8\n  latent_dim: 256\n  num_heads: 4\n"
-        "flow:\n  prediction_type: flow\n  time_shift: 5.0\n"
+        "objective:\n  type: ddpm\n  num_train_timesteps: 1000\n  beta_schedule: linear\n  time_shift: 5.0\n"
         "lr_scheduler: cosine\n"
     )
 
-    assert load_pc_config(path, [])["flow"]["prediction_type"] == "flow"
+    assert load_pc_config(path, [])['objective']['type'] == "ddpm"
 
 
 def test_pc_config_rejects_wrong_frame_count(tmp_path):
@@ -20,7 +20,7 @@ def test_pc_config_rejects_wrong_frame_count(tmp_path):
     path.write_text(
         "data:\n  num_frames: 48\n  num_points: 2048\n"
         "model:\n  n_layers: 8\n  latent_dim: 256\n  num_heads: 4\n"
-        "flow:\n  prediction_type: flow\n  time_shift: 5\n"
+        "objective:\n  type: ddpm\n  num_train_timesteps: 1000\n  beta_schedule: linear\n  time_shift: 5\n"
     )
 
     with pytest.raises(ValueError, match="data.num_frames must be 49"):
@@ -32,7 +32,7 @@ def test_pc_config_rejects_unknown_learning_rate_scheduler(tmp_path):
     path.write_text(
         "data:\n  num_frames: 49\n  num_points: 2048\n"
         "model:\n  n_layers: 8\n  latent_dim: 256\n  num_heads: 4\n"
-        "flow:\n  prediction_type: flow\n  time_shift: 5\n"
+        "objective:\n  type: ddpm\n  num_train_timesteps: 1000\n  beta_schedule: linear\n  time_shift: 5\n"
         "lr_scheduler: triangular\n"
     )
 

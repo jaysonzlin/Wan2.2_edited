@@ -4,6 +4,7 @@ from pathlib import Path
 
 from train_pc import (
     create_progress_bar,
+    create_pc_noise_scheduler,
     initialize_trackers,
     should_save_visualization,
     visualization_path,
@@ -59,3 +60,12 @@ def test_readme_documents_pc_flow_entrypoint():
 
     assert "train_pc.py --config configs/train/config_pc.yaml" in readme
     assert "pc.hdf5" in readme
+
+
+def test_ddpm_objective_creates_sample_prediction_scheduler():
+    scheduler = create_pc_noise_scheduler(
+        {"type": "ddpm", "num_train_timesteps": 1000, "beta_schedule": "linear"}
+    )
+
+    assert scheduler.config.prediction_type == "sample"
+    assert scheduler.config.clip_sample is False

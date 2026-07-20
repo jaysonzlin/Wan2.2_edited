@@ -101,8 +101,11 @@ class PCFlowHead(nn.Module):
 
 
 class PCFlowModel(nn.Module):
-    def __init__(self, n_points=2048, n_future_frames=48, latent_dim=256, n_layers=8, num_heads=4, point_embed=True):
+    def __init__(self, n_points=2048, n_future_frames=48, latent_dim=256, n_layers=8, num_heads=4, point_embed=True, objective_type="flow"):
         super().__init__()
+        if objective_type not in {"flow", "ddpm"}:
+            raise ValueError("objective_type must be 'flow' or 'ddpm'")
+        self.objective_type = objective_type
         self.n_points, self.n_future_frames, self.latent_dim = n_points, n_future_frames, latent_dim
         self.input_encoder = PointEmbed(latent_dim) if point_embed else nn.Linear(3, latent_dim)
         self.linear_velocity_encoder, self.angular_velocity_encoder = nn.Linear(3, latent_dim), nn.Linear(3, latent_dim)
@@ -120,11 +123,11 @@ class PCFlowModel(nn.Module):
             raise ValueError("init_pc must have shape (B, 1, N, 3)")
         if frame_times.shape != (b, self.n_future_frames + 1):
             raise ValueError("frame_times must have shape (B, 49)")
-        if not torch.equal(frame_times[:, 0], torch.zeros_like(frame_times[:, 0])):
+        if self.objective_type == "flow" and not torch.equal(frame_times[:, 0], torch.zeros_like(frame_times[:, 0])):
             raise ValueError("frame_times[:, 0] must be zero")
         if initial_linear_velocity.shape != (b, 1, 3) or initial_angular_velocity.shape != (b, 1, 3):
             raise ValueError("initial velocities must have shape (B, 1, 3)")
-        future_positions = init_pc.unsqueeze(1) + noisy_displacements
+        future_positions = init_pc.unsqueeze(1) + noisy_displacements if self.objective_type == "flow" else noisy_displacements
         coordinates = torch.cat((init_pc.unsqueeze(1), future_positions), dim=1).squeeze(2)
         points = self.input_encoder(coordinates.reshape(-1, self.n_points, 3)).reshape(b, self.n_future_frames + 1, self.n_points, self.latent_dim)
         points = points + self.point_position[None, None] + self.frame_position[None, :, None]
@@ -132,4 +135,5 @@ class PCFlowModel(nn.Module):
         conditions = conditions[:, None].expand(-1, self.n_future_frames + 1, -1, -1)
         for block in self.blocks:
             points, conditions = block(points, conditions, frame_times)
-        return self.flow_head(points[:, 1:], frame_times[:, 1:]).unsqueeze(2)
+        output = self.flow_head(points[:, 1:], frame_times[:, 1:]).unsqueeze(2)
+        return output if self.objective_type == "flow" else output + init_pc.unsqueeze(1)

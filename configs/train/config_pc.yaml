@@ -32,12 +32,15 @@ model:
   point_embed: true
   frame_cond: true
   transformer_block: SpatialTemporalTransformerBlock
-flow:
-  prediction_type: flow
-  time_shift: 5.0
+objective:
+  type: ddpm
   num_train_timesteps: 1000
+  beta_schedule: linear
+  # Used only when objective.type is flow.
+  time_shift: 5.0
 sampling:
   num_inference_steps: 50
+  # Used only when objective.type is flow (UniPC).
   solver_order: 3
 visualization:
   every_epochs: 100
