@@ -19,6 +19,31 @@ The workflow has dedicated PC modules, trainer, config, tests, and
 visualization. It follows the repository's existing root-entrypoint,
 `training/` helper, YAML config, and CPU-test conventions.
 
+### No surplus PhysCtrl port
+
+The remake is defined only by the behavior selected in PhysCtrl's
+`config_pc.yaml`. It must be a clean Wan-native implementation, not a copy of
+`edited-physctrl/src/model/spacetime.py` or its generic CogVideoX wrapper.
+
+Do not port any unused PhysCtrl alternatives or optional machinery, including:
+
+- spatial-only, temporal-only, v2, and v3 transformer-block variants;
+- MDM/MCG models and material, force, drag, gravity, class, floor, or
+  coefficient conditioning;
+- optional class embeddings, OFS embeddings, LoRA/PEFT processor plumbing,
+  generic Diffusers model/config mixins, and checkpoint-format compatibility;
+- image/video patching, patch-size branches, learned-position alternatives,
+  or generic text-sequence configuration;
+- PhysCtrl's DDPM/DDIM pipeline, `pred_offset` head behavior, and
+  classifier-free condition-drop path.
+
+Only these configuration-selected PC features transfer: `PointEmbed`, 8
+factorized spatial-temporal blocks at width 256 with 4 x 64-dimensional heads,
+a prepended source frame, fixed point-index/temporal sinusoidal positions, two
+linear velocity tokens, and zero condition drop. The new Wan flow objective,
+flow head, per-frame time interface, and flow solver replace the original
+DDPM-specific pieces.
+
 ## Data contract
 
 The dataset accepts only files at `sample_*/pc.hdf5` under the configured
