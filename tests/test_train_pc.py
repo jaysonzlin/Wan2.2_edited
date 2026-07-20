@@ -2,7 +2,7 @@ import subprocess
 import sys
 from pathlib import Path
 
-from train_pc import create_progress_bar, visualization_path
+from train_pc import create_progress_bar, should_save_visualization, visualization_path
 
 
 def test_train_pc_help_is_local_only():
@@ -25,6 +25,12 @@ def test_progress_bar_tracks_optimizer_steps():
         assert progress_bar.n == 2
     finally:
         progress_bar.close()
+
+
+def test_visualization_cadence_uses_completed_epochs():
+    assert not should_save_visualization(epoch=1, every_epochs=2)
+    assert should_save_visualization(epoch=2, every_epochs=2)
+    assert should_save_visualization(epoch=3, every_epochs=3)
 
 
 def test_readme_documents_pc_flow_entrypoint():
