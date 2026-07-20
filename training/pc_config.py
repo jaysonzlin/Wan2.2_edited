@@ -52,3 +52,5 @@ def validate_pc_config(config: dict) -> None:
         raise ValueError("flow.prediction_type must be 'flow'")
     if not isinstance(flow.get("time_shift"), (int, float)) or flow["time_shift"] <= 0:
         raise ValueError("flow.time_shift must be positive")
+    if config.get("lr_scheduler") not in {"cosine", "constant"}:
+        raise ValueError("lr_scheduler must be 'cosine' or 'constant'")

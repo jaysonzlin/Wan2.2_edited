@@ -47,9 +47,10 @@ def main(config=None) -> None:
     from accelerate import Accelerator
     from accelerate.utils import set_seed
     from torch.utils.data import DataLoader
-    from transformers import get_cosine_schedule_with_warmup
+    from transformers import get_constant_schedule_with_warmup, get_cosine_schedule_with_warmup
     from training.pc_dataset import PCTrajectoryDataset
     from training.pc_flow import flow_mse, make_pc_flow_batch
+    from training.schedules import create_lr_scheduler
     from training.pc_visualization import save_pointcloud_comparison_mp4
     from wan.modules.pc_flow import PCFlowModel
     from wan.pc_pipeline import PCFlowPipeline
@@ -70,7 +71,14 @@ def main(config=None) -> None:
     model_config = config["model"]
     model = PCFlowModel(n_points=config["data"]["num_points"], n_future_frames=48, latent_dim=model_config["latent_dim"], n_layers=model_config["n_layers"], num_heads=model_config["num_heads"], point_embed=model_config["point_embed"])
     optimizer = torch.optim.AdamW(model.parameters(), lr=config["learning_rate"], betas=(config["adam_beta1"], config["adam_beta2"]), weight_decay=config["adam_weight_decay"], eps=config["adam_epsilon"])
-    scheduler = get_cosine_schedule_with_warmup(optimizer, config["lr_warmup_steps"], config["max_train_steps"])
+    scheduler = create_lr_scheduler(
+        config["lr_scheduler"],
+        optimizer,
+        config["lr_warmup_steps"],
+        config["max_train_steps"],
+        cosine_factory=get_cosine_schedule_with_warmup,
+        constant_factory=get_constant_schedule_with_warmup,
+    )
     model, optimizer, loader, scheduler = accelerator.prepare(model, optimizer, loader, scheduler)
     generator = torch.Generator(device=accelerator.device).manual_seed(config["seed"])
     step = 0
