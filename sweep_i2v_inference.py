@@ -11,25 +11,13 @@ OUT_DIR = Path("outputs/inference_sweep")
 PROMPT = "Objects moving in a Kubric simulator"
 SEED = 42
 NUM_FRAMES = 49
-CFG_SCALE = 1.0
-
-# The first five entries vary shift at a fixed 50 denoising steps.  The last
-# three vary steps at the fixed native shift of 5, avoiding a duplicate 5/50 run.
-EXPERIMENTS = (
-    (1, 50),
-    (2, 50),
-    (3, 50),
-    (4, 50),
-    (5, 50),
-    (5, 100),
-    (5, 150),
-    (5, 200),
-)
+CFG_SCALES = (0, 0.5, 0.75, 1, 2, 5)
+EXPERIMENTS = ((1, 50),)
 
 
-def output_name(shift: int, num_steps: int) -> str:
+def output_name(shift: int, num_steps: int, cfg_scale: float) -> str:
     """Return the per-sample MP4 filename for one inference experiment."""
-    return f"shift_{shift}_steps_{num_steps}.mp4"
+    return f"shift_{shift}_steps_{num_steps}_cfg_{cfg_scale:g}.mp4"
 
 
 def configure_scheduler(scheduler, num_steps: int, device, shift: int) -> None:
@@ -54,7 +42,8 @@ def main() -> None:
     args = parse_args()
     if args.list_experiments:
         for shift, num_steps in EXPERIMENTS:
-            print(output_name(shift, num_steps))
+            for cfg_scale in CFG_SCALES:
+                print(output_name(shift, num_steps, cfg_scale))
         return
 
     import imageio.v2 as imageio
@@ -90,7 +79,11 @@ def main() -> None:
         conditional_context = text_encoder([PROMPT], device)
         unconditional_context = text_encoder([""], device)
 
-        for shift, num_steps in EXPERIMENTS:
+        for shift, num_steps, cfg_scale in (
+            (shift, num_steps, cfg_scale)
+            for shift, num_steps in EXPERIMENTS
+            for cfg_scale in CFG_SCALES
+        ):
             generator = torch.Generator(device=device).manual_seed(SEED)
             latent = torch.randn(
                 (
@@ -139,7 +132,7 @@ def main() -> None:
                         seq_len=seq_len,
                     )[0]
                     prediction = classifier_free_guidance(
-                        unconditional, conditional, CFG_SCALE
+                        unconditional, conditional, cfg_scale
                     )
                     latent = scheduler.step(
                         prediction.unsqueeze(0),
@@ -152,7 +145,7 @@ def main() -> None:
 
             video = vae.decode([latent])[0].permute(1, 2, 3, 0)
             frames = ((video.clamp(-1, 1) + 1) * 127.5).byte().cpu().numpy()
-            output_path = OUT_DIR / output_name(shift, num_steps)
+            output_path = OUT_DIR / output_name(shift, num_steps, cfg_scale)
             with imageio.get_writer(
                 output_path,
                 fps=ti2v_5B.sample_fps,

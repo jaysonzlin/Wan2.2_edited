@@ -9,7 +9,7 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 SCRIPT = REPO_ROOT / "sweep_i2v_inference.py"
 
 
-def test_lists_the_separate_shift_and_step_experiments() -> None:
+def test_lists_the_cfg_scale_sweep_for_the_fixed_scheduler_experiment() -> None:
     result = subprocess.run(
         [sys.executable, str(SCRIPT), "--list-experiments"],
         cwd=REPO_ROOT,
@@ -19,14 +19,12 @@ def test_lists_the_separate_shift_and_step_experiments() -> None:
 
     assert result.returncode == 0, result.stderr
     assert result.stdout.splitlines() == [
-        "shift_1_steps_50.mp4",
-        "shift_2_steps_50.mp4",
-        "shift_3_steps_50.mp4",
-        "shift_4_steps_50.mp4",
-        "shift_5_steps_50.mp4",
-        "shift_5_steps_100.mp4",
-        "shift_5_steps_150.mp4",
-        "shift_5_steps_200.mp4",
+        "shift_1_steps_50_cfg_0.mp4",
+        "shift_1_steps_50_cfg_0.5.mp4",
+        "shift_1_steps_50_cfg_0.75.mp4",
+        "shift_1_steps_50_cfg_1.mp4",
+        "shift_1_steps_50_cfg_2.mp4",
+        "shift_1_steps_50_cfg_5.mp4",
     ]
 
 
