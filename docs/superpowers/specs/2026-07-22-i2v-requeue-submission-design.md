@@ -18,10 +18,11 @@ override `logging.output_dir=outputs/i2v_requeue`, ensuring its checkpoints,
 visualization MP4s, tracker artifacts, and resume lookup do not overlap the
 existing `outputs` run. It will retain `training.resume_from_checkpoint=latest`;
 with no checkpoint in the new directory, the training script starts from step
-zero.
+zero. It will also override `data.prompt=""`, so every training sample uses an
+empty text embedding and the model is trained strictly from its image condition.
 
 ## Verification
 
 The script will be checked with `bash -n`. A focused text check will verify the
-new filename, `train_i2v.py` entrypoint, isolated output override, and absence
-of the point-cloud training entrypoint.
+new filename, `train_i2v.py` entrypoint, empty-prompt override, isolated output
+override, and absence of the point-cloud training entrypoint.
