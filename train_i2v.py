@@ -35,6 +35,17 @@ def resolve_unconditional_prompt(
     return wan_negative_prompt if use_wan_negative_prompt else ""
 
 
+def create_optimizer(parameters, training) -> torch.optim.AdamW:
+    """Create AdamW using the configured I2V optimizer parameters."""
+    return torch.optim.AdamW(
+        parameters,
+        lr=training["learning_rate"],
+        betas=(training["adam_beta1"], training["adam_beta2"]),
+        eps=training["adam_epsilon"],
+        weight_decay=training["weight_decay"],
+    )
+
+
 def create_progress_bar(total: int, initial: int, enabled: bool):
     """Create a rank-zero optimizer-step progress bar."""
     from tqdm.auto import tqdm
@@ -208,7 +219,7 @@ def main() -> None:
     )
     vae, text_encoder = load_frozen_encoders(config["model"]["checkpoint_dir"], ti2v_5B, accelerator.device)
     model = load_trainable_dit(config["model"]["checkpoint_dir"], config["model"]["gradient_checkpointing"])
-    optimizer = torch.optim.AdamW(model.parameters(), lr=training["learning_rate"], weight_decay=training["weight_decay"])
+    optimizer = create_optimizer(model.parameters(), training)
     scheduler = create_lr_scheduler(
         training["lr_scheduler"], optimizer, training["warmup_steps"], training["max_train_steps"],
         cosine_factory=get_cosine_schedule_with_warmup,

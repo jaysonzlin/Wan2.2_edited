@@ -20,6 +20,10 @@ training:
   max_train_steps: 5000
   learning_rate: 1.0e-5
   weight_decay: 0.01
+  # Match PyTorch AdamW defaults unless a training run overrides them.
+  adam_beta1: 0.9
+  adam_beta2: 0.999
+  adam_epsilon: 1.0e-8
   warmup_steps: 200
   # "constant" retains the learning rate after warmup; "cosine" preserves X-WAM's default.
   lr_scheduler: cosine

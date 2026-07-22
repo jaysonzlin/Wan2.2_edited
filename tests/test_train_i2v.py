@@ -4,7 +4,10 @@ from pathlib import Path
 import subprocess
 import sys
 
+import torch
+
 from train_i2v import (
+    create_optimizer,
     create_progress_bar,
     load_checkpoint_with_fallback,
     prune_checkpoints,
@@ -14,6 +17,24 @@ from train_i2v import (
 
 
 class TrainI2VHelperTests(unittest.TestCase):
+    def test_create_optimizer_uses_configured_adamw_parameters(self):
+        parameter = torch.nn.Parameter(torch.zeros(()))
+        optimizer = create_optimizer(
+            [parameter],
+            {
+                "learning_rate": 1.0e-5,
+                "weight_decay": 0.1,
+                "adam_beta1": 0.9,
+                "adam_beta2": 0.95,
+                "adam_epsilon": 1.0e-8,
+            },
+        )
+
+        group = optimizer.param_groups[0]
+        self.assertEqual(group["betas"], (0.9, 0.95))
+        self.assertEqual(group["eps"], 1.0e-8)
+        self.assertEqual(group["weight_decay"], 0.1)
+
     def test_unconditional_prompt_is_empty_by_default(self):
         self.assertEqual(resolve_unconditional_prompt(False, "Wan negative"), "")
 
