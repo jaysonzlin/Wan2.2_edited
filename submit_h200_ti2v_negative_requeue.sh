@@ -1,0 +1,49 @@
+#!/bin/bash
+#SBATCH --job-name=wan_ti2v
+#SBATCH --partition=gpu_requeue
+#SBATCH --constraint=h200
+#SBATCH --gres=gpu:1
+#SBATCH --cpus-per-task=2
+#SBATCH --mem=64G
+#SBATCH --time=05:00:00
+#SBATCH --requeue
+#SBATCH --open-mode=append
+#SBATCH --output=/net/holy-isilon/ifs/rc_labs/ydu_lab/jaysonzlin/Wan2.2_edited/logs/wan_ti2v_%j.out
+#SBATCH --error=/net/holy-isilon/ifs/rc_labs/ydu_lab/jaysonzlin/Wan2.2_edited/logs/wan_ti2v_%j.err
+
+set -euo pipefail
+
+PROJECT_DIR="/net/holy-isilon/ifs/rc_labs/ydu_lab/jaysonzlin/Wan2.2_edited"
+
+cd "${PROJECT_DIR}"
+mkdir -p logs
+
+echo "============================================================"
+echo "Job ID:       ${SLURM_JOB_ID}"
+echo "Restart count: ${SLURM_RESTART_COUNT:-0}"
+echo "Node:         $(hostname)"
+echo "Start time:   $(date)"
+echo "CUDA devices: ${CUDA_VISIBLE_DEVICES:-not set}"
+echo "============================================================"
+
+nvidia-smi
+
+export PYTHONUNBUFFERED=1
+
+exec singularity exec --nv \
+    -B /n/holylabs \
+    -B /net/holy-isilon \
+    -B /tmp:/dev/shm \
+    "${PROJECT_DIR}/current.sif" \
+    accelerate launch \
+        --config_file configs/accelerate/h200_single_gpu.yaml \
+        train_i2v.py \
+        --config configs/train/overfit_kubric_i2v.yaml \
+        data.prompt="Colorful object falls onto the light gray ground" \
+        training.use_wan_negative_prompt=true \
+        logging.output_dir=outputs/ti2v_negative_requeue \
+        training.resume_from_checkpoint=latest \
+        training.max_train_steps=10000 \
+        training.checkpoint_every_steps=250 \
+        training.checkpoints_total_limit=3 \
+        training.lr_scheduler=constant

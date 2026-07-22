@@ -26,6 +26,8 @@ training:
   max_grad_norm: 1.0
   # X-WAM-style classifier-free guidance training: encode an empty prompt for 10% of samples.
   text_dropout_probability: 0.1
+  # Use Wan's canonical negative prompt instead of empty text for unconditional branches.
+  use_wan_negative_prompt: false
   time_shift: 5.0
   num_train_timesteps: 1000
   mixed_precision: bf16
