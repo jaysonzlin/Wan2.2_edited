@@ -13,11 +13,15 @@ SEED = 42
 NUM_FRAMES = 49
 CFG_SCALES = (0, 0.5, 0.75, 1, 2, 5)
 EXPERIMENTS = ((1, 50),)
+PROMPT_CONDITIONS = (
+    ("no_prompt", "", ""),
+    ("standard_negative", PROMPT, None),
+)
 
 
-def output_name(shift: int, num_steps: int, cfg_scale: float) -> str:
-    """Return the per-sample MP4 filename for one inference experiment."""
-    return f"shift_{shift}_steps_{num_steps}_cfg_{cfg_scale:g}.mp4"
+def output_name(condition: str, shift: int, num_steps: int, cfg_scale: float) -> str:
+    """Return the per-sample MP4 filename for one prompt condition."""
+    return f"{condition}_shift_{shift}_steps_{num_steps}_cfg_{cfg_scale:g}.mp4"
 
 
 def configure_scheduler(scheduler, num_steps: int, device, shift: int) -> None:
@@ -41,9 +45,10 @@ def main() -> None:
     """Load the selected checkpoint and write one MP4 for every experiment."""
     args = parse_args()
     if args.list_experiments:
-        for shift, num_steps in EXPERIMENTS:
-            for cfg_scale in CFG_SCALES:
-                print(output_name(shift, num_steps, cfg_scale))
+        for condition, _, _ in PROMPT_CONDITIONS:
+            for shift, num_steps in EXPERIMENTS:
+                for cfg_scale in CFG_SCALES:
+                    print(output_name(condition, shift, num_steps, cfg_scale))
         return
 
     import imageio.v2 as imageio

@@ -19,12 +19,18 @@ def test_lists_the_cfg_scale_sweep_for_the_fixed_scheduler_experiment() -> None:
 
     assert result.returncode == 0, result.stderr
     assert result.stdout.splitlines() == [
-        "shift_1_steps_50_cfg_0.mp4",
-        "shift_1_steps_50_cfg_0.5.mp4",
-        "shift_1_steps_50_cfg_0.75.mp4",
-        "shift_1_steps_50_cfg_1.mp4",
-        "shift_1_steps_50_cfg_2.mp4",
-        "shift_1_steps_50_cfg_5.mp4",
+        "no_prompt_shift_1_steps_50_cfg_0.mp4",
+        "no_prompt_shift_1_steps_50_cfg_0.5.mp4",
+        "no_prompt_shift_1_steps_50_cfg_0.75.mp4",
+        "no_prompt_shift_1_steps_50_cfg_1.mp4",
+        "no_prompt_shift_1_steps_50_cfg_2.mp4",
+        "no_prompt_shift_1_steps_50_cfg_5.mp4",
+        "standard_negative_shift_1_steps_50_cfg_0.mp4",
+        "standard_negative_shift_1_steps_50_cfg_0.5.mp4",
+        "standard_negative_shift_1_steps_50_cfg_0.75.mp4",
+        "standard_negative_shift_1_steps_50_cfg_1.mp4",
+        "standard_negative_shift_1_steps_50_cfg_2.mp4",
+        "standard_negative_shift_1_steps_50_cfg_5.mp4",
     ]
 
 
