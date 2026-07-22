@@ -8,6 +8,7 @@ import torch
 from training.wan_i2v_training import (
     apply_classifier_free_dropout,
     classifier_free_guidance,
+    denoised_latent_mse,
     load_frozen_encoders,
     make_flow_matching_batch,
     masked_velocity_mse,
@@ -100,3 +101,17 @@ class WanI2VTrainingTests(unittest.TestCase):
         mask = torch.tensor([[[[[0]], [[1]]]]], dtype=torch.float32)
 
         self.assertAlmostEqual(masked_velocity_mse(prediction, target, mask).item(), 1.0)
+
+    def test_denoised_latent_mse_excludes_the_first_latent_slot(self):
+        prediction = torch.tensor([[[[[100.0]], [[3.0]], [[5.0]]]]])
+        target = torch.tensor([[[[[0.0]], [[1.0]], [[2.0]]]]])
+
+        result = denoised_latent_mse(prediction, target)
+
+        self.assertAlmostEqual(result.item(), 6.5)
+
+    def test_denoised_latent_mse_rejects_mismatched_shapes(self):
+        with self.assertRaisesRegex(ValueError, "shapes must match"):
+            denoised_latent_mse(
+                torch.zeros(1, 1, 2, 1, 1), torch.zeros(1, 1, 3, 1, 1)
+            )

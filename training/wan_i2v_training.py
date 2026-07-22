@@ -92,6 +92,17 @@ def masked_velocity_mse(
     return ((prediction - target).pow(2) * float_mask).sum() / float_mask.sum().clamp_min(1)
 
 
+def denoised_latent_mse(prediction: torch.Tensor, target: torch.Tensor) -> torch.Tensor:
+    """Return latent MSE over denoised slots, excluding the clean input slot."""
+    if prediction.shape != target.shape:
+        raise ValueError("Predicted and target latent shapes must match")
+    if prediction.ndim != 5 or prediction.shape[2] < 2:
+        raise ValueError(
+            "Latents must have shape [B, C, T, H, W] with at least two time slots"
+        )
+    return (prediction[:, :, 1:].float() - target[:, :, 1:].float()).square().mean()
+
+
 def expand_latent_timesteps(
     latent_timesteps: torch.Tensor, latent_height: int, latent_width: int, patch_size: int = 2
 ) -> torch.Tensor:
