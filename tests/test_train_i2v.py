@@ -72,6 +72,17 @@ class TrainI2VHelperTests(unittest.TestCase):
             Path("outputs") / "vis" / "epoch_0012.mp4",
         )
 
+    def test_visualization_metrics_are_logged_only_with_the_visualization(self):
+        source = Path("train_i2v.py").read_text()
+        compact_source = "".join(source.split())
+
+        self.assertIn("return latent", source)
+        self.assertIn(
+            "denoised_latent_mse(visualization_latent,clean_latents[0])",
+            compact_source,
+        )
+        self.assertIn('"train/visualization_denoised_latent_mse"', source)
+
     def test_checkpoint_pruning_keeps_newest_three(self):
         with tempfile.TemporaryDirectory() as temporary_directory:
             root = Path(temporary_directory)

@@ -14,6 +14,7 @@ from training.schedules import create_lr_scheduler
 from training.wan_i2v_training import (
     apply_classifier_free_dropout,
     classifier_free_guidance,
+    denoised_latent_mse,
     expand_latent_timesteps,
     load_frozen_encoders,
     load_trainable_dit,
@@ -74,7 +75,7 @@ def _token_timesteps(latent_timesteps: torch.Tensor, latents: torch.Tensor) -> t
 def save_visualization(
     model, vae, text_encoder, condition_frame, prompt, output_file, wan_config,
     time_shift, num_frames, seed, cfg_scale,
-) -> None:
+) -> torch.Tensor:
     """Generate one deterministic, local-only native TI2V sample."""
     from imageio.v2 import get_writer
     from wan.utils.fm_solvers_unipc import FlowUniPCMultistepScheduler
@@ -126,6 +127,7 @@ def save_visualization(
             writer.append_data(frame)
     if was_training:
         model.train()
+    return latent
 
 
 def _checkpoint_paths(output_dir: Path, setting: str | None) -> list[Path]:
@@ -265,10 +267,18 @@ def main() -> None:
                 if accelerator.is_main_process:
                     prune_checkpoints(output_dir, training["checkpoints_total_limit"])
             if accelerator.is_main_process and global_step % training["visualization_every_steps"] == 0:
-                save_visualization(
+                visualization_latent = save_visualization(
                     accelerator.unwrap_model(model), vae, text_encoder, videos[0, 0], data["prompt"],
                     visualization_path(output_dir, epoch), ti2v_5B, training["time_shift"], data["num_frames"], training["seed"],
                     training["visualization_cfg_scale"],
+                )
+                accelerator.log(
+                    {
+                        "train/visualization_denoised_latent_mse": denoised_latent_mse(
+                            visualization_latent, clean_latents[0]
+                        ).item()
+                    },
+                    step=global_step,
                 )
             if global_step >= training["max_train_steps"]:
                 break

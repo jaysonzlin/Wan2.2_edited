@@ -115,3 +115,11 @@ class WanI2VTrainingTests(unittest.TestCase):
             denoised_latent_mse(
                 torch.zeros(1, 1, 2, 1, 1), torch.zeros(1, 1, 3, 1, 1)
             )
+
+    def test_denoised_latent_mse_accepts_an_unbatched_visualization_latent(self):
+        prediction = torch.tensor([[[[100.0]], [[3.0]], [[5.0]]]])
+        target = torch.tensor([[[[0.0]], [[1.0]], [[2.0]]]])
+
+        result = denoised_latent_mse(prediction, target)
+
+        self.assertAlmostEqual(result.item(), 6.5)

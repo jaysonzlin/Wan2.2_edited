@@ -96,11 +96,18 @@ def denoised_latent_mse(prediction: torch.Tensor, target: torch.Tensor) -> torch
     """Return latent MSE over denoised slots, excluding the clean input slot."""
     if prediction.shape != target.shape:
         raise ValueError("Predicted and target latent shapes must match")
-    if prediction.ndim != 5 or prediction.shape[2] < 2:
+    if prediction.ndim not in (4, 5):
         raise ValueError(
-            "Latents must have shape [B, C, T, H, W] with at least two time slots"
+            "Latents must have shape [C, T, H, W] or [B, C, T, H, W]"
         )
-    return (prediction[:, :, 1:].float() - target[:, :, 1:].float()).square().mean()
+    time_dim = prediction.ndim - 3
+    if prediction.shape[time_dim] < 2:
+        raise ValueError("Latents must have at least two time slots")
+    denoised = [slice(None)] * prediction.ndim
+    denoised[time_dim] = slice(1, None)
+    return (
+        prediction[tuple(denoised)].float() - target[tuple(denoised)].float()
+    ).square().mean()
 
 
 def expand_latent_timesteps(
