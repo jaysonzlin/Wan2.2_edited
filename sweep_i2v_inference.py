@@ -24,6 +24,17 @@ def output_name(condition: str, shift: int, num_steps: int, cfg_scale: float) ->
     return f"{condition}_shift_{shift}_steps_{num_steps}_cfg_{cfg_scale:g}.mp4"
 
 
+def resolve_prompt_pair(
+    condition: tuple[str, str, str | None], standard_negative_prompt: str
+) -> tuple[str, str]:
+    """Return the conditional and CFG-baseline prompts for one condition."""
+    _, conditional_prompt, baseline_prompt = condition
+    return (
+        conditional_prompt,
+        standard_negative_prompt if baseline_prompt is None else baseline_prompt,
+    )
+
+
 def configure_scheduler(scheduler, num_steps: int, device, shift: int) -> None:
     """Configure sampling from the first sigma, including duplicate timesteps."""
     scheduler.set_timesteps(num_steps, device=device, shift=shift)
@@ -81,86 +92,93 @@ def main() -> None:
 
     with torch.inference_mode():
         condition_latent = vae.encode([condition_frame.unsqueeze(1)])[0]
-        conditional_context = text_encoder([PROMPT], device)
-        unconditional_context = text_encoder([""], device)
-
-        for shift, num_steps, cfg_scale in (
-            (shift, num_steps, cfg_scale)
-            for shift, num_steps in EXPERIMENTS
-            for cfg_scale in CFG_SCALES
-        ):
-            generator = torch.Generator(device=device).manual_seed(SEED)
-            latent = torch.randn(
-                (
-                    condition_latent.shape[0],
-                    (NUM_FRAMES - 1) // 4 + 1,
-                    condition_latent.shape[-2],
-                    condition_latent.shape[-1],
-                ),
-                device=device,
-                dtype=condition_latent.dtype,
-                generator=generator,
+        for condition in PROMPT_CONDITIONS:
+            condition_name, _, _ = condition
+            conditional_prompt, baseline_prompt = resolve_prompt_pair(
+                condition, ti2v_5B.sample_neg_prompt
             )
-            latent[:, :1] = condition_latent
+            conditional_context = text_encoder([conditional_prompt], device)
+            baseline_context = text_encoder([baseline_prompt], device)
 
-            scheduler = FlowUniPCMultistepScheduler(
-                num_train_timesteps=ti2v_5B.num_train_timesteps,
-                shift=1,
-                use_dynamic_shifting=False,
-            )
-            configure_scheduler(scheduler, num_steps, device, shift)
-            seq_len = (
-                latent.shape[1]
-                * (latent.shape[-2] // 2)
-                * (latent.shape[-1] // 2)
-            )
+            for shift, num_steps, cfg_scale in (
+                (shift, num_steps, cfg_scale)
+                for shift, num_steps in EXPERIMENTS
+                for cfg_scale in CFG_SCALES
+            ):
+                generator = torch.Generator(device=device).manual_seed(SEED)
+                latent = torch.randn(
+                    (
+                        condition_latent.shape[0],
+                        (NUM_FRAMES - 1) // 4 + 1,
+                        condition_latent.shape[-2],
+                        condition_latent.shape[-1],
+                    ),
+                    device=device,
+                    dtype=condition_latent.dtype,
+                    generator=generator,
+                )
+                latent[:, :1] = condition_latent
 
-            with torch.autocast(device_type="cuda", dtype=ti2v_5B.param_dtype):
-                for timestep in scheduler.timesteps:
-                    frame_times = torch.full(
-                        (1, latent.shape[1]),
-                        timestep.item(),
-                        device=device,
-                        dtype=latent.dtype,
-                    )
-                    frame_times[:, 0] = 0
-                    conditional = model(
-                        [latent],
-                        t=_token_timesteps(frame_times, latent.unsqueeze(0)),
-                        context=conditional_context,
-                        seq_len=seq_len,
-                    )[0]
-                    unconditional = model(
-                        [latent],
-                        t=_token_timesteps(frame_times, latent.unsqueeze(0)),
-                        context=unconditional_context,
-                        seq_len=seq_len,
-                    )[0]
-                    prediction = classifier_free_guidance(
-                        unconditional, conditional, cfg_scale
-                    )
-                    latent = scheduler.step(
-                        prediction.unsqueeze(0),
-                        timestep,
-                        latent.unsqueeze(0),
-                        return_dict=False,
-                        generator=generator,
-                    )[0].squeeze(0)
-                    latent[:, :1] = condition_latent
+                scheduler = FlowUniPCMultistepScheduler(
+                    num_train_timesteps=ti2v_5B.num_train_timesteps,
+                    shift=1,
+                    use_dynamic_shifting=False,
+                )
+                configure_scheduler(scheduler, num_steps, device, shift)
+                seq_len = (
+                    latent.shape[1]
+                    * (latent.shape[-2] // 2)
+                    * (latent.shape[-1] // 2)
+                )
 
-            video = vae.decode([latent])[0].permute(1, 2, 3, 0)
-            frames = ((video.clamp(-1, 1) + 1) * 127.5).byte().cpu().numpy()
-            output_path = OUT_DIR / output_name(shift, num_steps, cfg_scale)
-            with imageio.get_writer(
-                output_path,
-                fps=ti2v_5B.sample_fps,
-                codec="libx264",
-                quality=8,
-                pixelformat="yuv420p",
-            ) as writer:
-                for frame in frames:
-                    writer.append_data(frame)
-            print(f"Wrote {output_path}")
+                with torch.autocast(device_type="cuda", dtype=ti2v_5B.param_dtype):
+                    for timestep in scheduler.timesteps:
+                        frame_times = torch.full(
+                            (1, latent.shape[1]),
+                            timestep.item(),
+                            device=device,
+                            dtype=latent.dtype,
+                        )
+                        frame_times[:, 0] = 0
+                        conditional = model(
+                            [latent],
+                            t=_token_timesteps(frame_times, latent.unsqueeze(0)),
+                            context=conditional_context,
+                            seq_len=seq_len,
+                        )[0]
+                        baseline = model(
+                            [latent],
+                            t=_token_timesteps(frame_times, latent.unsqueeze(0)),
+                            context=baseline_context,
+                            seq_len=seq_len,
+                        )[0]
+                        prediction = classifier_free_guidance(
+                            baseline, conditional, cfg_scale
+                        )
+                        latent = scheduler.step(
+                            prediction.unsqueeze(0),
+                            timestep,
+                            latent.unsqueeze(0),
+                            return_dict=False,
+                            generator=generator,
+                        )[0].squeeze(0)
+                        latent[:, :1] = condition_latent
+
+                video = vae.decode([latent])[0].permute(1, 2, 3, 0)
+                frames = ((video.clamp(-1, 1) + 1) * 127.5).byte().cpu().numpy()
+                output_path = OUT_DIR / output_name(
+                    condition_name, shift, num_steps, cfg_scale
+                )
+                with imageio.get_writer(
+                    output_path,
+                    fps=ti2v_5B.sample_fps,
+                    codec="libx264",
+                    quality=8,
+                    pixelformat="yuv420p",
+                ) as writer:
+                    for frame in frames:
+                        writer.append_data(frame)
+                print(f"Wrote {output_path}")
 
 
 if __name__ == "__main__":

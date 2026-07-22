@@ -34,6 +34,16 @@ def test_lists_the_cfg_scale_sweep_for_the_fixed_scheduler_experiment() -> None:
     ]
 
 
+def test_resolves_no_prompt_and_standard_negative_contexts() -> None:
+    assert sweep_i2v_inference.resolve_prompt_pair(
+        ("no_prompt", "", ""), standard_negative_prompt="unused"
+    ) == ("", "")
+    assert sweep_i2v_inference.resolve_prompt_pair(
+        ("standard_negative", sweep_i2v_inference.PROMPT, None),
+        standard_negative_prompt="wan default negative",
+    ) == (sweep_i2v_inference.PROMPT, "wan default negative")
+
+
 def test_configures_scheduler_to_begin_at_its_first_sigma() -> None:
     calls = []
 
