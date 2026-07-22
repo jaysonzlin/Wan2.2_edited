@@ -8,11 +8,20 @@ from train_i2v import (
     create_progress_bar,
     load_checkpoint_with_fallback,
     prune_checkpoints,
+    resolve_unconditional_prompt,
     visualization_path,
 )
 
 
 class TrainI2VHelperTests(unittest.TestCase):
+    def test_unconditional_prompt_is_empty_by_default(self):
+        self.assertEqual(resolve_unconditional_prompt(False, "Wan negative"), "")
+
+    def test_unconditional_prompt_uses_wan_negative_prompt_when_enabled(self):
+        self.assertEqual(
+            resolve_unconditional_prompt(True, "Wan negative"), "Wan negative"
+        )
+
     def test_latest_checkpoint_falls_back_after_a_failed_load(self):
         class FakeAccelerator:
             def __init__(self):
@@ -82,6 +91,22 @@ class TrainI2VHelperTests(unittest.TestCase):
             compact_source,
         )
         self.assertIn('"train/visualization_denoised_latent_mse"', source)
+
+    def test_unconditional_prompt_is_used_for_dropout_and_visualization(self):
+        compact_source = "".join(Path("train_i2v.py").read_text().split())
+
+        self.assertIn(
+            'resolve_unconditional_prompt(training.get("use_wan_negative_prompt",False),'
+            "ti2v_5B.sample_neg_prompt)",
+            compact_source,
+        )
+        self.assertIn(
+            "text_encoder([unconditional_prompt]*len(context),accelerator.device)",
+            compact_source,
+        )
+        self.assertIn(
+            'data["prompt"],unconditional_prompt,visualization_path', compact_source
+        )
 
     def test_checkpoint_pruning_keeps_newest_three(self):
         with tempfile.TemporaryDirectory() as temporary_directory:

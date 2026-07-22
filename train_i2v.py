@@ -28,6 +28,13 @@ def visualization_path(output_dir: str | Path, epoch: int) -> Path:
     return Path(output_dir) / "vis" / f"epoch_{epoch:04d}.mp4"
 
 
+def resolve_unconditional_prompt(
+    use_wan_negative_prompt: bool, wan_negative_prompt: str
+) -> str:
+    """Return the text used by classifier-free unconditional branches."""
+    return wan_negative_prompt if use_wan_negative_prompt else ""
+
+
 def create_progress_bar(total: int, initial: int, enabled: bool):
     """Create a rank-zero optimizer-step progress bar."""
     from tqdm.auto import tqdm
@@ -73,7 +80,7 @@ def _token_timesteps(latent_timesteps: torch.Tensor, latents: torch.Tensor) -> t
 
 @torch.no_grad()
 def save_visualization(
-    model, vae, text_encoder, condition_frame, prompt, output_file, wan_config,
+    model, vae, text_encoder, condition_frame, prompt, unconditional_prompt, output_file, wan_config,
     time_shift, num_frames, seed, cfg_scale,
 ) -> torch.Tensor:
     """Generate one deterministic, local-only native TI2V sample."""
@@ -92,7 +99,7 @@ def save_visualization(
     )
     latent[:, :1] = condition_latent
     conditional_context = text_encoder([prompt], device)
-    unconditional_context = text_encoder([""], device)
+    unconditional_context = text_encoder([unconditional_prompt], device)
     scheduler = FlowUniPCMultistepScheduler(
         num_train_timesteps=wan_config.num_train_timesteps, shift=1, use_dynamic_shifting=False
     )
@@ -179,6 +186,9 @@ def main() -> None:
 
     config = load_config(args.config, args.overrides)
     training, data, logging = config["training"], config["data"], config["logging"]
+    unconditional_prompt = resolve_unconditional_prompt(
+        training.get("use_wan_negative_prompt", False), ti2v_5B.sample_neg_prompt
+    )
     output_dir = Path(logging["output_dir"])
     output_dir.mkdir(parents=True, exist_ok=True)
     accelerator = Accelerator(
@@ -231,8 +241,12 @@ def main() -> None:
                         len(context), device=accelerator.device, generator=generator
                     ) < training["text_dropout_probability"]
                     if drop_mask.any():
-                        null_context = text_encoder([""] * len(context), accelerator.device)
-                        context = apply_classifier_free_dropout(context, null_context, drop_mask)
+                        unconditional_context = text_encoder(
+                            [unconditional_prompt] * len(context), accelerator.device
+                        )
+                        context = apply_classifier_free_dropout(
+                            context, unconditional_context, drop_mask
+                        )
                 flow = make_flow_matching_batch(clean_latents, generator, training["time_shift"], training["num_train_timesteps"])
                 token_times = _token_timesteps(flow.latent_timesteps, clean_latents)
                 with accelerator.autocast():
@@ -269,7 +283,7 @@ def main() -> None:
             if accelerator.is_main_process and global_step % training["visualization_every_steps"] == 0:
                 visualization_latent = save_visualization(
                     accelerator.unwrap_model(model), vae, text_encoder, videos[0, 0], data["prompt"],
-                    visualization_path(output_dir, epoch), ti2v_5B, training["time_shift"], data["num_frames"], training["seed"],
+                    unconditional_prompt, visualization_path(output_dir, epoch), ti2v_5B, training["time_shift"], data["num_frames"], training["seed"],
                     training["visualization_cfg_scale"],
                 )
                 accelerator.log(
