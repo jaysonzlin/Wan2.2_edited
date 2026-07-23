@@ -1,150 +1,285 @@
-# Visualization Latent MSE Implementation Plan
+# Sampled Denoised-Latent MSE Implementation Plan
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Log masked MSE between each periodic visualization's final sampled latent and its clean ground-truth latent.
+**Goal:** Log a full-sampling denoised-latent MSE every 10 optimizer steps while retaining MP4 visualization output every 250 steps.
 
-**Architecture:** Add a pure masked-latent-MSE helper to the I2V training utilities. Make the existing visualization sampler return its final latent, then calculate and log the helper result only when the existing main-process visualization branch runs.
+**Architecture:** Keep `denoised_latent_mse` as the pure masked comparison. Split sampling from MP4 writing so the trainer can sample for metrics without producing a video, and reuse the same sampled latent when a metric and visualization cadence coincide.
 
-**Tech Stack:** Python 3, PyTorch, Accelerate, pytest/unittest, Wan TI2V.
+**Tech Stack:** Python 3, PyTorch, Accelerate, unittest/pytest, Wan TI2V.
 
 ## Global Constraints
 
-- Do not change the flow-matching loss, optimizer, scheduler, seed, prompt conditioning, or 50-step visualization sampling process.
-- Compare the visualization's final sampled latent directly with `clean_latents[0]`.
-- Exclude latent time index `0`; include every future time index, channel, height, and width.
-- Log only from the existing `accelerator.is_main_process` visualization branch as `train/visualization_denoised_latent_mse` at its current `global_step`.
+- Add `training.denoised_latent_mse_every_steps: 10`; it must be a positive integer.
+- Preserve the 50-step solver, seed, prompts, CFG scale, time shift, MP4 path, and `visualization_every_steps` behavior.
+- Log only `train/denoised_latent_mse`; remove `train/visualization_denoised_latent_mse`.
+- Compare the sampled latent with the current local batch's first clean latent, excluding latent time index `0`.
+- At a step matching both cadences, sample once and use that latent both for logging and MP4 writing.
 
 ---
 
-### Task 1: Add a mask-aware latent MSE helper
+### Task 1: Configure and validate the metric cadence
 
 **Files:**
-
-- Modify: `training/wan_i2v_training.py:87-92`
-- Test: `tests/test_wan_i2v_training.py:1-106`
+- Modify: `configs/train/overfit_kubric_i2v.yaml:40-44`
+- Modify: `training/overfit_config.py:49-59`
+- Modify: `tests/test_overfit_config.py:42-57`
 
 **Interfaces:**
+- Consumes: `config["training"]`.
+- Produces: a required positive integer `training["denoised_latent_mse_every_steps"]` available to `train_i2v.main`.
 
-- Consumes: predicted and ground-truth latent tensors of shape `[B, C, T, H, W]`.
-- Produces: `denoised_latent_mse(prediction: torch.Tensor, target: torch.Tensor) -> torch.Tensor`, a scalar that excludes `T=0`.
+- [ ] **Step 1: Write the failing validation test**
 
-- [ ] **Step 1: Write the failing tests**
+  Add to `OverfitConfigTests`:
 
-Import `denoised_latent_mse` and add:
+  ```python
+      def test_invalid_denoised_latent_mse_cadence_is_rejected(self):
+          with tempfile.TemporaryDirectory() as temporary_directory:
+              path = write_yaml(
+                  Path(temporary_directory),
+                  {"training": {"denoised_latent_mse_every_steps": 0}},
+              )
 
-```python
-    def test_denoised_latent_mse_excludes_the_first_latent_slot(self):
-        prediction = torch.tensor([[[[[100.0]], [[3.0]], [[5.0]]]]])
-        target = torch.tensor([[[[[0.0]], [[1.0]], [[2.0]]]]])
+              with self.assertRaisesRegex(
+                  ValueError, "denoised_latent_mse_every_steps must be a positive integer"
+              ):
+                  load_config(path, [])
+  ```
 
-        result = denoised_latent_mse(prediction, target)
+- [ ] **Step 2: Verify the test fails for the missing validation**
 
-        self.assertAlmostEqual(result.item(), 6.5)
+  Run: `python -m pytest tests/test_overfit_config.py::OverfitConfigTests::test_invalid_denoised_latent_mse_cadence_is_rejected -v`
 
-    def test_denoised_latent_mse_rejects_mismatched_shapes(self):
-        with self.assertRaisesRegex(ValueError, "shapes must match"):
-            denoised_latent_mse(torch.zeros(1, 1, 2, 1, 1), torch.zeros(1, 1, 3, 1, 1))
-```
+  Expected: FAIL because `load_config` accepts zero.
 
-- [ ] **Step 2: Run the tests to verify they fail**
+- [ ] **Step 3: Add the default and validation**
 
-Run `conda run -n das python -m pytest tests/test_wan_i2v_training.py -v`.
+  Under `visualization_every_steps` in `configs/train/overfit_kubric_i2v.yaml`, add:
 
-Expected: FAIL at collection because `denoised_latent_mse` is not exported.
+  ```yaml
+  denoised_latent_mse_every_steps: 10
+  ```
 
-- [ ] **Step 3: Write the minimal implementation**
+  Expand the `validate_config` cadence-key tuple in `training/overfit_config.py` to:
 
-Add this helper below `masked_velocity_mse`:
+  ```python
+      for key in (
+          "max_train_steps",
+          "warmup_steps",
+          "checkpoint_every_steps",
+          "denoised_latent_mse_every_steps",
+      ):
+  ```
 
-```python
-def denoised_latent_mse(prediction: torch.Tensor, target: torch.Tensor) -> torch.Tensor:
-    """Return latent MSE over denoised slots, excluding the clean input slot."""
-    if prediction.shape != target.shape:
-        raise ValueError("Predicted and target latent shapes must match")
-    if prediction.ndim != 5 or prediction.shape[2] < 2:
-        raise ValueError("Latents must have shape [B, C, T, H, W] with at least two time slots")
-    return (prediction[:, :, 1:].float() - target[:, :, 1:].float()).square().mean()
-```
+  This existing validation produces the required error for `0` and non-integers.
 
-- [ ] **Step 4: Run the focused tests to verify they pass**
+- [ ] **Step 4: Verify the focused configuration tests pass**
 
-Run `conda run -n das python -m pytest tests/test_wan_i2v_training.py -v`.
+  Run: `python -m pytest tests/test_overfit_config.py -v`
 
-Expected: PASS, including the first-slot exclusion and shape-validation tests.
+  Expected: PASS, including the new zero-cadence rejection.
 
-- [ ] **Step 5: Commit the helper**
+- [ ] **Step 5: Commit the configuration task**
 
-Run `git add training/wan_i2v_training.py tests/test_wan_i2v_training.py` and `git commit -m "feat: add denoised latent MSE helper"`.
+  ```bash
+  git add configs/train/overfit_kubric_i2v.yaml training/overfit_config.py tests/test_overfit_config.py
+  git commit -m "feat: configure sampled latent MSE cadence"
+  ```
 
-### Task 2: Return and log the visualization's final sampled latent
+### Task 2: Separate latent sampling from MP4 output
 
 **Files:**
-
-- Modify: `train_i2v.py:13-22, 75-151, 236-270`
-- Test: `tests/test_train_i2v.py:1-73`
+- Modify: `train_i2v.py:81-150`
+- Modify: `tests/test_train_i2v.py:102-116`
 
 **Interfaces:**
+- Produces: `sample_visualization_latent(model, vae, text_encoder, condition_frame, prompt, unconditional_prompt, wan_config, time_shift, num_frames, seed, cfg_scale) -> torch.Tensor`.
+- Produces: `save_visualization(vae, latent, output_file, fps) -> None`.
+- `sample_visualization_latent` owns model mode restoration; `save_visualization` only decodes and writes the supplied latent.
 
-- Consumes: `denoised_latent_mse`, `clean_latents[0]`, and the `latent` already produced by `save_visualization`.
-- Produces: a `save_visualization(...) -> torch.Tensor` return value and one `accelerator.log` metric at each visualization event.
+- [ ] **Step 1: Write the failing sampler-separation source-contract test**
 
-- [ ] **Step 1: Write the failing source-contract test**
+  Replace `test_visualization_metrics_are_logged_only_with_the_visualization` with:
 
-Add this test to `tests/test_train_i2v.py`:
+  ```python
+      def test_sampling_is_separate_from_visualization_output(self):
+          source = Path("train_i2v.py").read_text()
 
-```python
-    def test_visualization_metrics_are_logged_only_with_the_visualization(self):
-        source = Path("train_i2v.py").read_text()
+          self.assertIn("def sample_visualization_latent(", source)
+          self.assertIn("def save_visualization(", source)
+          self.assertIn("return latent", source)
+  ```
 
-        self.assertIn("return latent", source)
-        self.assertIn("denoised_latent_mse(visualization_latent, clean_latents[0])", source)
-        self.assertIn('"train/visualization_denoised_latent_mse"', source)
-```
+- [ ] **Step 2: Verify it fails for the current combined function**
 
-- [ ] **Step 2: Run the test to verify it fails**
+  Run: `python -m pytest tests/test_train_i2v.py::TrainI2VHelperTests::test_sampling_is_separate_from_visualization_output -v`
 
-Run `conda run -n das python -m pytest tests/test_train_i2v.py::TrainI2VHelperTests::test_visualization_metrics_are_logged_only_with_the_visualization -v`.
+  Expected: FAIL because `sample_visualization_latent` does not exist and `save_visualization` has the old signature.
 
-Expected: FAIL because the visualization function returns `None` and no visualization latent metric exists.
+- [ ] **Step 3: Split the sampler and writer**
 
-- [ ] **Step 3: Write the minimal implementation**
+  Rename the current decorated `save_visualization` function to
+  `sample_visualization_latent`, remove its `output_file` parameter, and retain
+  its model-evaluation, solver loop, `if was_training: model.train()`, and
+  `return latent` behavior.  Its signature must be:
 
-Import `denoised_latent_mse` from `training.wan_i2v_training`. After the MP4 writer closes in `save_visualization`, restore train mode if necessary and return the final `latent` tensor:
+  ```python
+  @torch.no_grad()
+  def sample_visualization_latent(
+      model, vae, text_encoder, condition_frame, prompt, unconditional_prompt,
+      wan_config, time_shift, num_frames, seed, cfg_scale,
+  ) -> torch.Tensor:
+  ```
 
-```python
-    if was_training:
-        model.train()
-    return latent
-```
+  Immediately below it, add the writer that contains only the old decode and
+  MP4-output tail:
 
-At the existing `if accelerator.is_main_process and global_step % training["visualization_every_steps"] == 0:` branch, store the return value and log the metric immediately after the visualization call:
+  ```python
+  def save_visualization(
+      vae, latent: torch.Tensor, output_file: Path, fps: int
+  ) -> None:
+      """Decode a sampled latent and write the local qualitative MP4."""
+      from imageio.v2 import get_writer
 
-```python
-                visualization_latent = save_visualization(...)
-                accelerator.log(
-                    {
-                        "train/visualization_denoised_latent_mse": denoised_latent_mse(
-                            visualization_latent, clean_latents[0]
-                        ).item()
-                    },
-                    step=global_step,
+      video = vae.decode([latent])[0].permute(1, 2, 3, 0)
+      frames = ((video.clamp(-1, 1) + 1) * 127.5).byte().cpu().numpy()
+      output_file.parent.mkdir(parents=True, exist_ok=True)
+      with get_writer(output_file, fps=fps, codec="libx264", quality=8) as writer:
+          for frame in frames:
+              writer.append_data(frame)
+  ```
+
+  Its call must pass `ti2v_5B.sample_fps`.
+
+- [ ] **Step 4: Verify the focused sampler contract passes**
+
+  Run: `python -m pytest tests/test_train_i2v.py::TrainI2VHelperTests::test_sampling_is_separate_from_visualization_output -v`
+
+  Expected: PASS.
+
+- [ ] **Step 5: Commit the sampler split**
+
+  ```bash
+  git add train_i2v.py tests/test_train_i2v.py
+  git commit -m "refactor: separate I2V sampling from video output"
+  ```
+
+### Task 3: Log sampled MSE independently of video cadence
+
+**Files:**
+- Modify: `train_i2v.py:279-306`
+- Modify: `tests/test_train_i2v.py:102-125`
+
+**Interfaces:**
+- Consumes: `training["denoised_latent_mse_every_steps"]`, `sample_visualization_latent`, `save_visualization`, `denoised_latent_mse`, and current-batch `clean_latents[0]`.
+- Produces: `train/denoised_latent_mse` at every matching optimizer step and an MP4 only at matching visualization steps.
+
+- [ ] **Step 1: Write the failing cadence source-contract test**
+
+  Add to `TrainI2VHelperTests`:
+
+  ```python
+      def test_sampled_latent_mse_has_its_own_cadence_and_reuses_visualization_sample(self):
+          compact_source = "".join(Path("train_i2v.py").read_text().split())
+
+          self.assertIn('global_step%training["denoised_latent_mse_every_steps"]==0', compact_source)
+          self.assertIn('"train/denoised_latent_mse"', compact_source)
+          self.assertNotIn('"train/visualization_denoised_latent_mse"', compact_source)
+          self.assertIn('sampled_latent=sample_visualization_latent(', compact_source)
+          self.assertIn('save_visualization(vae,sampled_latent,', compact_source)
+  ```
+
+- [ ] **Step 2: Verify it fails for the visualization-only implementation**
+
+  Run: `python -m pytest tests/test_train_i2v.py::TrainI2VHelperTests::test_sampled_latent_mse_has_its_own_cadence_and_reuses_visualization_sample -v`
+
+  Expected: FAIL because the trainer only samples and logs inside the 250-step visualization branch.
+
+- [ ] **Step 3: Implement independent sampling, logging, and MP4 writing**
+
+  Replace the existing visualization block with:
+
+  ```python
+            should_log_denoised_mse = (
+                global_step % training["denoised_latent_mse_every_steps"] == 0
+            )
+            should_save_visualization = (
+                accelerator.is_main_process
+                and global_step % training["visualization_every_steps"] == 0
+            )
+            if should_log_denoised_mse or should_save_visualization:
+                sampled_latent = sample_visualization_latent(
+                    accelerator.unwrap_model(model), vae, text_encoder, videos[0, 0],
+                    data["prompt"], unconditional_prompt, ti2v_5B,
+                    training["time_shift"], data["num_frames"], training["seed"],
+                    training["visualization_cfg_scale"],
                 )
-```
+                if should_log_denoised_mse:
+                    accelerator.log(
+                        {
+                            "train/denoised_latent_mse": denoised_latent_mse(
+                                sampled_latent, clean_latents[0]
+                            ).item()
+                        },
+                        step=global_step,
+                    )
+                if should_save_visualization:
+                    save_visualization(
+                        vae, sampled_latent, visualization_path(output_dir, epoch),
+                        ti2v_5B.sample_fps,
+                    )
+  ```
 
-Keep the existing visualization arguments and output path unchanged.
+  Keep this block after checkpoint handling.  Do not change the regular loss,
+  learning-rate, or gradient-norm logging.
 
-- [ ] **Step 4: Run the focused tests to verify they pass**
+- [ ] **Step 4: Verify focused trainer and helper tests pass**
 
-Run `conda run -n das python -m pytest tests/test_train_i2v.py tests/test_wan_i2v_training.py -v`.
+  Run: `python -m pytest tests/test_train_i2v.py tests/test_wan_i2v_training.py -v`
 
-Expected: PASS, including the source contract and pure latent-MSE behavior.
+  Expected: PASS, including first-slot masking and the new independent cadence
+  source contract.
 
-- [ ] **Step 5: Commit the visualization integration**
+- [ ] **Step 5: Commit the metric integration**
 
-Run `git add train_i2v.py tests/test_train_i2v.py` and `git commit -m "feat: log visualization denoised latent MSE"`.
+  ```bash
+  git add train_i2v.py tests/test_train_i2v.py
+  git commit -m "feat: log sampled denoised latent MSE"
+  ```
 
-## Final verification
+### Task 4: Align design records and run the full focused suite
 
-- [ ] Run `conda run -n das python -m pytest -q` and confirm the full suite passes.
-- [ ] Run `git diff --check` and confirm no whitespace errors.
+**Files:**
+- Modify: `docs/superpowers/specs/2026-07-22-visualization-latent-mse-design.md`
+- Modify: `docs/superpowers/plans/2026-07-22-visualization-latent-mse.md`
+
+**Interfaces:**
+- Consumes: the completed configuration, sampler split, and metric integration.
+- Produces: documentation that states the implemented 10-step sampling metric and 250-step MP4 behavior.
+
+- [ ] **Step 1: Check the records name the final behavior**
+
+  Confirm both documents state all of: a positive configurable
+  `denoised_latent_mse_every_steps` default of `10`, full sampling without MP4
+  at metric events, and reuse of the sampled latent for an MP4 at visualization
+  events.
+
+- [ ] **Step 2: Run the full focused regression suite**
+
+  Run: `python -m pytest tests/test_overfit_config.py tests/test_train_i2v.py tests/test_wan_i2v_training.py -v`
+
+  Expected: PASS with no collection errors or test failures.
+
+- [ ] **Step 3: Inspect the final diff**
+
+  Run: `git diff --check HEAD~3..HEAD && git status --short`
+
+  Expected: no whitespace errors; only intended tracked changes or documented pre-existing untracked files.
+
+- [ ] **Step 4: Commit the aligned documentation**
+
+  ```bash
+  git add docs/superpowers/specs/2026-07-22-visualization-latent-mse-design.md docs/superpowers/plans/2026-07-22-visualization-latent-mse.md
+  git commit -m "docs: plan sampled latent MSE logging"
+  ```
