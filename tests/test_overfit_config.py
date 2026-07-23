@@ -51,3 +51,15 @@ class OverfitConfigTests(unittest.TestCase):
             )
             with self.assertRaisesRegex(ValueError, "4n \\+ 1"):
                 load_config(path, [])
+
+    def test_invalid_denoised_latent_mse_cadence_is_rejected(self):
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            path = write_yaml(
+                Path(temporary_directory),
+                {"training": {"denoised_latent_mse_every_steps": 0}},
+            )
+
+            with self.assertRaisesRegex(
+                ValueError, "denoised_latent_mse_every_steps must be a positive integer"
+            ):
+                load_config(path, [])

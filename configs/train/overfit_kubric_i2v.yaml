@@ -38,6 +38,7 @@ training:
   checkpoint_every_steps: 250
   checkpoints_total_limit: 3
   visualization_every_steps: 250
+  denoised_latent_mse_every_steps: 10
   # CFG=1 is the conditional prediction, while still exercising the CFG sampling path.
   visualization_cfg_scale: 1.0
   resume_from_checkpoint: null
