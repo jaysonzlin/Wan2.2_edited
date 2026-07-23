@@ -1,12 +1,10 @@
 #!/bin/bash
 #SBATCH --job-name=wan_i2v_lingbot_optim
-#SBATCH --partition=gpu_requeue
-#SBATCH --constraint=h200
+#SBATCH --partition=gpu_h200
 #SBATCH --gres=gpu:1
 #SBATCH --cpus-per-task=2
 #SBATCH --mem=64G
 #SBATCH --time=05:00:00
-#SBATCH --requeue
 #SBATCH --open-mode=append
 #SBATCH --output=/net/holy-isilon/ifs/rc_labs/ydu_lab/jaysonzlin/Wan2.2_edited/logs/wan_i2v_lingbot_optim_%j.out
 #SBATCH --error=/net/holy-isilon/ifs/rc_labs/ydu_lab/jaysonzlin/Wan2.2_edited/logs/wan_i2v_lingbot_optim_%j.err
