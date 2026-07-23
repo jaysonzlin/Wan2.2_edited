@@ -38,7 +38,7 @@ exec singularity exec --nv \
         train_i2v.py \
         --config configs/train/overfit_kubric_i2v.yaml \
         'data.prompt=""' \
-        logging.output_dir=outputs/i2v_lingbot_optim \
+        logging.output_dir=outputs/i2v_lingbot_no_weight_decay \
         training.resume_from_checkpoint=latest \
         training.max_train_steps=10000 \
         training.learning_rate=1.0e-6 \
