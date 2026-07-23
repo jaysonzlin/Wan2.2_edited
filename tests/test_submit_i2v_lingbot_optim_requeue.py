@@ -14,5 +14,6 @@ def test_i2v_lingbot_optimizer_requeue_script_uses_requested_overrides() -> None
     assert "training.weight_decay=0.1" in script
     assert "training.adam_beta1=0.9" in script
     assert "training.adam_beta2=0.95" in script
-    assert "logging.output_dir=outputs/i2v_lingbot_optim_requeue" in script
+    assert "training.learning_rate=1.0e-6" in script
+    assert "logging.output_dir=outputs/i2v_lingbot_optim" in script
     assert "train_pc.py" not in script

@@ -13,9 +13,11 @@ Update only `submit_h200_i2v_lingbot_optim_requeue.sh`.
 - Replace `logging.output_dir=outputs/i2v_lingbot_optim_requeue` with
   `logging.output_dir=outputs/i2v_lingbot_optim`.
 
-The script name, Slurm resources, optimizer overrides, resume behavior, shared
-I2V config, and tests remain unchanged.
+The script name, Slurm resources, optimizer overrides, resume behavior, and
+shared I2V config remain unchanged. Update the existing launcher test's
+expected output directory and add an assertion for the learning-rate override;
+do not add a new test case.
 
 ## Verification
 
-Run Bash syntax validation on the edited launcher. No test changes are needed.
+Run Bash syntax validation and the existing focused launcher test.
