@@ -90,12 +90,11 @@ def _token_timesteps(latent_timesteps: torch.Tensor, latents: torch.Tensor) -> t
 
 
 @torch.no_grad()
-def save_visualization(
-    model, vae, text_encoder, condition_frame, prompt, unconditional_prompt, output_file, wan_config,
+def sample_visualization_latent(
+    model, vae, text_encoder, condition_frame, prompt, unconditional_prompt, wan_config,
     time_shift, num_frames, seed, cfg_scale,
 ) -> torch.Tensor:
-    """Generate one deterministic, local-only native TI2V sample."""
-    from imageio.v2 import get_writer
+    """Generate one deterministic native TI2V latent sample."""
     from wan.utils.fm_solvers_unipc import FlowUniPCMultistepScheduler
 
     was_training = model.training
@@ -137,15 +136,23 @@ def save_visualization(
                 prediction.unsqueeze(0), timestep, latent.unsqueeze(0), return_dict=False, generator=generator
             )[0].squeeze(0)
             latent[:, :1] = condition_latent
-    video = vae.decode([latent])[0].permute(1, 2, 3, 0)
-    frames = ((video.clamp(-1, 1) + 1) * 127.5).byte().cpu().numpy()
-    output_file.parent.mkdir(parents=True, exist_ok=True)
-    with get_writer(output_file, fps=wan_config.sample_fps, codec="libx264", quality=8) as writer:
-        for frame in frames:
-            writer.append_data(frame)
     if was_training:
         model.train()
     return latent
+
+
+def save_visualization(
+    vae, latent: torch.Tensor, output_file: Path, fps: int
+) -> None:
+    """Decode a sampled latent and write the local qualitative MP4."""
+    from imageio.v2 import get_writer
+
+    video = vae.decode([latent])[0].permute(1, 2, 3, 0)
+    frames = ((video.clamp(-1, 1) + 1) * 127.5).byte().cpu().numpy()
+    output_file.parent.mkdir(parents=True, exist_ok=True)
+    with get_writer(output_file, fps=fps, codec="libx264", quality=8) as writer:
+        for frame in frames:
+            writer.append_data(frame)
 
 
 def _checkpoint_paths(output_dir: Path, setting: str | None) -> list[Path]:

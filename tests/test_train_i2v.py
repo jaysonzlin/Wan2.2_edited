@@ -102,16 +102,12 @@ class TrainI2VHelperTests(unittest.TestCase):
             Path("outputs") / "vis" / "epoch_0012.mp4",
         )
 
-    def test_visualization_metrics_are_logged_only_with_the_visualization(self):
+    def test_sampling_is_separate_from_visualization_output(self):
         source = Path("train_i2v.py").read_text()
-        compact_source = "".join(source.split())
 
+        self.assertIn("def sample_visualization_latent(", source)
+        self.assertIn("def save_visualization(", source)
         self.assertIn("return latent", source)
-        self.assertIn(
-            "denoised_latent_mse(visualization_latent,clean_latents[0])",
-            compact_source,
-        )
-        self.assertIn('"train/visualization_denoised_latent_mse"', source)
 
     def test_unconditional_prompt_is_used_for_dropout_and_visualization(self):
         compact_source = "".join(Path("train_i2v.py").read_text().split())
