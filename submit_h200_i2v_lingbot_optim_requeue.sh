@@ -37,7 +37,7 @@ exec singularity exec --nv \
         --config_file configs/accelerate/h200_single_gpu.yaml \
         train_i2v.py \
         --config configs/train/overfit_kubric_i2v.yaml \
-        data.prompt="" \
+        'data.prompt=""' \
         logging.output_dir=outputs/i2v_lingbot_optim_requeue \
         training.resume_from_checkpoint=latest \
         training.max_train_steps=10000 \

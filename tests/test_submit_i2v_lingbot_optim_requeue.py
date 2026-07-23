@@ -9,7 +9,7 @@ def test_i2v_lingbot_optimizer_requeue_script_uses_requested_overrides() -> None
     assert "#SBATCH --constraint=h200" not in script
     assert "#SBATCH --requeue" not in script
     assert "train_i2v.py" in script
-    assert 'data.prompt=""' in script
+    assert "'data.prompt=\"\"'" in script
     assert "training.max_grad_norm=2.0" in script
     assert "training.weight_decay=0.1" in script
     assert "training.adam_beta1=0.9" in script

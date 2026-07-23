@@ -9,6 +9,6 @@ def test_i2v_requeue_script_uses_empty_prompt_and_isolated_output() -> None:
     assert "#SBATCH --constraint=h200" not in script
     assert "#SBATCH --requeue" not in script
     assert "train_i2v.py" in script
-    assert 'data.prompt=""' in script
+    assert "'data.prompt=\"\"'" in script
     assert "logging.output_dir=outputs/i2v_requeue" in script
     assert "train_pc.py" not in script
