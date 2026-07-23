@@ -42,6 +42,7 @@ exec singularity exec --nv \
         training.resume_from_checkpoint=latest \
         training.max_train_steps=10000 \
         training.learning_rate=1.0e-6 \
+        training.train_batch_size=2 \
         training.checkpoint_every_steps=250 \
         training.checkpoints_total_limit=3 \
         training.lr_scheduler=constant \
