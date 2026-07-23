@@ -109,6 +109,18 @@ class TrainI2VHelperTests(unittest.TestCase):
         self.assertIn("def save_visualization(", source)
         self.assertIn("return latent", source)
 
+    def test_sampled_latent_mse_has_its_own_cadence_and_reuses_visualization_sample(self):
+        compact_source = "".join(Path("train_i2v.py").read_text().split())
+
+        self.assertIn(
+            'global_step%training["denoised_latent_mse_every_steps"]==0',
+            compact_source,
+        )
+        self.assertIn('"train/denoised_latent_mse"', compact_source)
+        self.assertNotIn('"train/visualization_denoised_latent_mse"', compact_source)
+        self.assertIn('sampled_latent=sample_visualization_latent(', compact_source)
+        self.assertIn('save_visualization(vae,sampled_latent,', compact_source)
+
     def test_unconditional_prompt_is_used_for_dropout_and_visualization(self):
         compact_source = "".join(Path("train_i2v.py").read_text().split())
 
@@ -122,7 +134,10 @@ class TrainI2VHelperTests(unittest.TestCase):
             compact_source,
         )
         self.assertIn(
-            'data["prompt"],unconditional_prompt,visualization_path', compact_source
+            'data["prompt"],unconditional_prompt,ti2v_5B', compact_source
+        )
+        self.assertIn(
+            "save_visualization(vae,sampled_latent,visualization_path", compact_source
         )
 
     def test_checkpoint_pruning_keeps_newest_three(self):

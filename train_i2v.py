@@ -298,20 +298,33 @@ def main() -> None:
                 accelerator.save_state(output_dir / f"checkpoint-{global_step}")
                 if accelerator.is_main_process:
                     prune_checkpoints(output_dir, training["checkpoints_total_limit"])
-            if accelerator.is_main_process and global_step % training["visualization_every_steps"] == 0:
-                visualization_latent = save_visualization(
+            should_log_denoised_mse = (
+                global_step % training["denoised_latent_mse_every_steps"] == 0
+            )
+            should_save_visualization = (
+                accelerator.is_main_process
+                and global_step % training["visualization_every_steps"] == 0
+            )
+            if should_log_denoised_mse or should_save_visualization:
+                sampled_latent = sample_visualization_latent(
                     accelerator.unwrap_model(model), vae, text_encoder, videos[0, 0], data["prompt"],
-                    unconditional_prompt, visualization_path(output_dir, epoch), ti2v_5B, training["time_shift"], data["num_frames"], training["seed"],
+                    unconditional_prompt, ti2v_5B, training["time_shift"], data["num_frames"], training["seed"],
                     training["visualization_cfg_scale"],
                 )
-                accelerator.log(
-                    {
-                        "train/visualization_denoised_latent_mse": denoised_latent_mse(
-                            visualization_latent, clean_latents[0]
-                        ).item()
-                    },
-                    step=global_step,
-                )
+                if should_log_denoised_mse:
+                    accelerator.log(
+                        {
+                            "train/denoised_latent_mse": denoised_latent_mse(
+                                sampled_latent, clean_latents[0]
+                            ).item()
+                        },
+                        step=global_step,
+                    )
+                if should_save_visualization:
+                    save_visualization(
+                        vae, sampled_latent, visualization_path(output_dir, epoch),
+                        ti2v_5B.sample_fps,
+                    )
             if global_step >= training["max_train_steps"]:
                 break
     accelerator.wait_for_everyone()
