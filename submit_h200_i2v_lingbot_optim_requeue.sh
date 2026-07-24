@@ -4,7 +4,7 @@
 #SBATCH --gres=gpu:1
 #SBATCH --cpus-per-task=2
 #SBATCH --mem=64G
-#SBATCH --time=05:00:00
+#SBATCH --time=06:00:00
 #SBATCH --open-mode=append
 #SBATCH --output=/net/holy-isilon/ifs/rc_labs/ydu_lab/jaysonzlin/Wan2.2_edited/logs/wan_i2v_lingbot_optim_%j.out
 #SBATCH --error=/net/holy-isilon/ifs/rc_labs/ydu_lab/jaysonzlin/Wan2.2_edited/logs/wan_i2v_lingbot_optim_%j.err
@@ -38,13 +38,14 @@ exec singularity exec --nv \
         train_i2v.py \
         --config configs/train/overfit_kubric_i2v.yaml \
         'data.prompt=""' \
-        logging.output_dir=outputs/i2v_lingbot_no_weight_decay \
+        logging.output_dir=outputs/i2v_lingbot_3e-6_no_weight_decay \
         training.resume_from_checkpoint=latest \
         training.max_train_steps=10000 \
-        training.learning_rate=1.0e-6 \
+        training.learning_rate=3.0e-6 \
         training.train_batch_size=1 \
         training.checkpoint_every_steps=250 \
         training.checkpoints_total_limit=3 \
+        training.denoised_latent_mse_every_steps=50 \
         training.lr_scheduler=constant \
         training.max_grad_norm=2.0 \
         training.weight_decay=0.0 \
