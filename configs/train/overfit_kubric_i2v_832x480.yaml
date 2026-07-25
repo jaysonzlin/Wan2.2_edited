@@ -1,0 +1,53 @@
+data:
+  dataset_root: training_dataset_832x480
+  prompt: Objects moving in a Kubric simulator
+  num_frames: 49
+  width: 832
+  height: 480
+  dataloader_num_workers: 4
+
+model:
+  checkpoint_dir: Wan2.2-TI2V-5B
+  freeze_vae: true
+  freeze_text_encoder: true
+  gradient_checkpointing: true
+  flash_attention: true
+
+training:
+  seed: 42
+  train_batch_size: 1
+  gradient_accumulation_steps: 4
+  max_train_steps: 5000
+  learning_rate: 1.0e-5
+  weight_decay: 0.01
+  # Match PyTorch AdamW defaults unless a training run overrides them.
+  adam_beta1: 0.9
+  adam_beta2: 0.999
+  adam_epsilon: 1.0e-8
+  warmup_steps: 200
+  # "constant" retains the learning rate after warmup; "cosine" preserves X-WAM's default.
+  lr_scheduler: cosine
+  max_grad_norm: 1.0
+  # X-WAM-style classifier-free guidance training: encode an empty prompt for 10% of samples.
+  text_dropout_probability: 0.1
+  # Use Wan's canonical negative prompt instead of empty text for unconditional branches.
+  use_wan_negative_prompt: false
+  time_shift: 5.0
+  num_train_timesteps: 1000
+  mixed_precision: bf16
+  checkpoint_every_steps: 250
+  checkpoints_total_limit: 3
+  visualization_every_steps: 250
+  denoised_latent_mse_every_steps: 10
+  # CFG=1 is the conditional prediction, while still exercising the CFG sampling path.
+  visualization_cfg_scale: 1.0
+  resume_from_checkpoint: null
+
+logging:
+  output_dir: outputs
+  wandb_project: wan22-kubric-overfit
+  wandb_run_name: null
+  log_every_steps: 1
+
+validation:
+  enabled: false
