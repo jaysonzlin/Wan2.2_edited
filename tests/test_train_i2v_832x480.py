@@ -24,6 +24,8 @@ def test_dataset_is_explicitly_native_832_by_480():
 
     assert "KubricI2VOverfitDataset(" in source
     assert "expected_size=(832, 480)" in source
+    assert "from accelerate import Accelerator" in source
+    assert "accelerator = Accelerator(" in source
 
 
 def test_832x480_config_targets_native_resolution_dataset():
