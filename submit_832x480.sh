@@ -41,14 +41,10 @@ exec singularity exec --nv \
         logging.output_dir=outputs/i2v_832x480 \
         training.resume_from_checkpoint=latest \
         training.max_train_steps=10000 \
-        training.learning_rate=1.0e-5 \
         training.train_batch_size=1 \
         training.checkpoint_every_steps=250 \
         training.checkpoints_total_limit=1 \
         training.visualization_every_steps=500 \
         training.denoised_latent_mse_every_steps=50 \
         training.lr_scheduler=constant \
-        training.max_grad_norm=2.0 \
-        training.weight_decay=0.1 \
-        training.adam_beta1=0.9 \
-        training.adam_beta2=0.95
+        training.max_grad_norm=2.0
