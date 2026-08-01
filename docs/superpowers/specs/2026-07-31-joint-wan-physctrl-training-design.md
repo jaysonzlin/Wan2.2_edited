@@ -53,7 +53,7 @@ Each sample has this structure:
 ```text
 sample_0001/
   rgba_00000.png ... rgba_00048.png
-  camera.json
+  metadata.json
   objects/
     000/pc.hdf5
     001/pc.hdf5
