@@ -85,6 +85,26 @@ class PCTrajectoryModel(nn.Module):
         initial_linear_velocity: torch.Tensor,
         initial_angular_velocity: torch.Tensor,
     ) -> torch.Tensor:
+        points, controls, temb = self.encode_states(
+            noisy_future_state,
+            frame_times,
+            init_pc,
+            initial_linear_velocity,
+            initial_angular_velocity,
+        )
+        for block in self.blocks:
+            points, controls = block(points, controls, temb)
+        return self.decode_states(points, temb, init_pc)
+
+    def encode_states(
+        self,
+        noisy_future_state: torch.Tensor,
+        frame_times: torch.Tensor,
+        init_pc: torch.Tensor,
+        initial_linear_velocity: torch.Tensor,
+        initial_angular_velocity: torch.Tensor,
+    ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+        """Encode a trajectory into point/control states for externally interleaved blocks."""
         batch = noisy_future_state.shape[0]
         expected = (batch, self.n_future_frames, 1, self.n_points, 3)
         if noisy_future_state.shape != expected:
@@ -131,7 +151,11 @@ class PCTrajectoryModel(nn.Module):
         )
         controls = controls[:, None].expand(-1, self.n_future_frames + 1, -1, -1)
         temb = self.time_embedding(frame_times).to(dtype=points.dtype)
-        for block in self.blocks:
-            points, controls = block(points, controls, temb)
+        return points, controls, temb
+
+    def decode_states(
+        self, points: torch.Tensor, temb: torch.Tensor, init_pc: torch.Tensor
+    ) -> torch.Tensor:
+        """Decode a post-block point state into the model's legacy output convention."""
         offset = self.output_head(points[:, 1:], temb[:, 1:]).unsqueeze(2)
         return offset if self.objective_type == "flow" else offset + init_pc.unsqueeze(1)

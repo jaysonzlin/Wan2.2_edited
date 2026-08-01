@@ -136,6 +136,25 @@ def test_parity_backbone_has_no_dropout_or_wan_rms_norm_modules():
     assert "WanRMSNorm" not in names
 
 
+def test_state_helpers_preserve_legacy_forward_result():
+    model = make_tiny_model(objective_type="ddpm")
+    noisy = torch.randn(1, 48, 1, 8, 3)
+    frame_times = torch.full((1, 49), 123.0)
+    initial = torch.randn(1, 1, 8, 3)
+    linear = torch.randn(1, 1, 3)
+    angular = torch.randn(1, 1, 3)
+
+    expected = model(noisy, frame_times, initial, linear, angular)
+    points, controls, temb = model.encode_states(
+        noisy, frame_times, initial, linear, angular
+    )
+    for block in model.blocks:
+        points, controls = block(points, controls, temb)
+    actual = model.decode_states(points, temb, initial)
+
+    torch.testing.assert_close(actual, expected)
+
+
 def test_model_rejects_non_physctrl_head_width_or_point_encoder():
     with pytest.raises(ValueError, match="num_heads must equal latent_dim // 64"):
         PCTrajectoryModel(

@@ -1,0 +1,51 @@
+data:
+  dataset_root: training_dataset_832x480
+  num_frames: 49
+  num_points: 2048
+  width: 832
+  height: 480
+  train_batch_size: 1
+  # Initial curriculum guard only; the architecture accepts any number of objects.
+  max_objects_per_sample: 4
+  dataloader_num_workers: 4
+model:
+  checkpoint_dir: Wan2.2-TI2V-5B
+  freeze_vae: true
+  freeze_text_encoder: true
+  gradient_checkpointing: true
+  wan_cross_attention_blocks: 8
+  physctrl_blocks: 8
+  interaction_dim: 512
+  interaction_heads: 8
+objective:
+  pc_type: ddpm_x0
+  num_train_timesteps: 1000
+  beta_schedule: linear
+  time_shift: 5.0
+  text_dropout_probability: 0
+optimizer:
+  lr: 1.0e-5
+  betas: [0.9, 0.95]
+  eps: 1.0e-8
+  weight_decay: 0.1
+training:
+  seed: 42
+  gradient_accumulation_steps: 1
+  max_train_steps: 5000
+  warmup_steps: 200
+  lr_scheduler: constant
+  max_grad_norm: 2.0
+  mixed_precision: bf16
+  checkpoint_every_steps: 250
+  checkpoints_total_limit: 2
+  denoised_latent_mse_every_steps: 50
+  resume_from_checkpoint: null
+sampling:
+  num_inference_steps: 50
+visualization:
+  every_steps: 250
+  fps: 12
+logging:
+  output_dir: outputs/joint_wan_physctrl
+  report_to: wandb
+  project: joint-wan-physctrl

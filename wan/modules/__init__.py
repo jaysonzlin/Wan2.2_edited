@@ -6,7 +6,7 @@ from importlib import import_module
 __all__ = [
     "Wan2_1_VAE", "Wan2_2_VAE", "WanModel", "T5Model", "T5Encoder",
     "T5Decoder", "T5EncoderModel", "HuggingfaceTokenizer", "flash_attention",
-    "PCTrajectoryModel",
+    "PCTrajectoryModel", "BidirectionalWanPhysCtrlBridge", "JointWanPhysCtrlModel",
 ]
 
 _LAZY_EXPORTS = {
@@ -20,6 +20,8 @@ _LAZY_EXPORTS = {
     "Wan2_1_VAE": (".vae2_1", "Wan2_1_VAE"),
     "Wan2_2_VAE": (".vae2_2", "Wan2_2_VAE"),
     "PCTrajectoryModel": (".pc_trajectory", "PCTrajectoryModel"),
+    "BidirectionalWanPhysCtrlBridge": (".joint_wan_physctrl", "BidirectionalWanPhysCtrlBridge"),
+    "JointWanPhysCtrlModel": (".joint_wan_physctrl", "JointWanPhysCtrlModel"),
 }
 
 

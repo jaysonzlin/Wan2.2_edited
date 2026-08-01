@@ -236,29 +236,37 @@ class WanAttentionBlock(nn.Module):
             grid_sizes(Tensor): Shape [B, 3], the second dimension contains (F, H, W)
             freqs(Tensor): Rope freqs, shape [1024, C / num_heads / 2]
         """
+        e = self.modulation_terms(e)
+        x = self.run_self_attention(x, e, seq_lens, grid_sizes, freqs)
+        x = self.run_text_cross_attention(x, context, context_lens)
+        return self.run_mlp(x, e)
+
+    def modulation_terms(self, e):
+        """Create the six AdaLN modulation terms used by the block phases."""
         assert e.dtype == torch.float32
         with torch.amp.autocast('cuda', dtype=torch.float32):
-            e = (self.modulation.unsqueeze(0) + e).chunk(6, dim=2)
-        assert e[0].dtype == torch.float32
+            terms = (self.modulation.unsqueeze(0) + e).chunk(6, dim=2)
+        assert terms[0].dtype == torch.float32
+        return terms
 
-        # self-attention
+    def run_self_attention(self, x, e, seq_lens, grid_sizes, freqs):
+        """Run Wan's native self-attention phase before any cross-branch exchange."""
         y = self.self_attn(
             self.norm1(x).float() * (1 + e[1].squeeze(2)) + e[0].squeeze(2),
             seq_lens, grid_sizes, freqs)
         with torch.amp.autocast('cuda', dtype=torch.float32):
-            x = x + y * e[2].squeeze(2)
+            return x + y * e[2].squeeze(2)
 
-        # cross-attention & ffn function
-        def cross_attn_ffn(x, context, context_lens, e):
-            x = x + self.cross_attn(self.norm3(x), context, context_lens)
-            y = self.ffn(
-                self.norm2(x).float() * (1 + e[4].squeeze(2)) + e[3].squeeze(2))
-            with torch.amp.autocast('cuda', dtype=torch.float32):
-                x = x + y * e[5].squeeze(2)
-            return x
+    def run_text_cross_attention(self, x, context, context_lens):
+        """Run Wan's existing text cross-attention phase."""
+        return x + self.cross_attn(self.norm3(x), context, context_lens)
 
-        x = cross_attn_ffn(x, context, context_lens, e)
-        return x
+    def run_mlp(self, x, e):
+        """Run Wan's native modulated MLP phase after a possible bridge update."""
+        y = self.ffn(
+            self.norm2(x).float() * (1 + e[4].squeeze(2)) + e[3].squeeze(2))
+        with torch.amp.autocast('cuda', dtype=torch.float32):
+            return x + y * e[5].squeeze(2)
 
 
 class Head(nn.Module):
