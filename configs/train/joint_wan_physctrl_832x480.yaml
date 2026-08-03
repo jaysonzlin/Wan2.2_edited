@@ -1,5 +1,5 @@
 data:
-  dataset_root: training_dataset_832x480
+  dataset_root: td_832x480
   num_frames: 49
   num_points: 2048
   width: 832
