@@ -6,12 +6,12 @@
 #SBATCH --mem=64G
 #SBATCH --time=05:00:00
 #SBATCH --open-mode=append
-#SBATCH --output=/net/holy-isilon/ifs/rc_labs/ydu_lab/jaysonzlin/Wan2.2_edited/logs/wan_ti2v_%j.out
-#SBATCH --error=/net/holy-isilon/ifs/rc_labs/ydu_lab/jaysonzlin/Wan2.2_edited/logs/wan_ti2v_%j.err
+#SBATCH --output=/n/lab_storage/ydu_lab/jaysonzlin/Wan2.2_edited/logs/wan_ti2v_%j.out
+#SBATCH --error=/n/lab_storage/ydu_lab/jaysonzlin/Wan2.2_edited/logs/wan_ti2v_%j.err
 
 set -euo pipefail
 
-PROJECT_DIR="/net/holy-isilon/ifs/rc_labs/ydu_lab/jaysonzlin/Wan2.2_edited"
+PROJECT_DIR="/n/lab_storage/ydu_lab/jaysonzlin/Wan2.2_edited"
 
 cd "${PROJECT_DIR}"
 mkdir -p logs
