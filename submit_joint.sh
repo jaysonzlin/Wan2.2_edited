@@ -4,7 +4,7 @@
 #SBATCH --gres=gpu:1
 #SBATCH --cpus-per-task=8
 #SBATCH --mem=64G
-#SBATCH --time=08:00:00
+#SBATCH --time=10:30:00
 #SBATCH --output=/n/lab_storage/ydu_lab/jaysonzlin/Wan2.2_edited/logs/wan_joint_physctrl_%j.out
 #SBATCH --error=/n/lab_storage/ydu_lab/jaysonzlin/Wan2.2_edited/logs/wan_joint_physctrl_%j.err
 
@@ -33,4 +33,5 @@ exec singularity exec --nv \
         --config_file configs/accelerate/h200_single_gpu.yaml \
         train_joint_wan_physctrl.py \
         --config configs/train/joint_wan_physctrl_832x480.yaml \
-        training.resume_from_checkpoint=latest
+        training.resume_from_checkpoint=latest \
+        training.max_train_steps=10000
