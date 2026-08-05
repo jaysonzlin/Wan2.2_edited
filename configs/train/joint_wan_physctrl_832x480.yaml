@@ -57,6 +57,6 @@ visualization:
   every_steps: 250
   fps: 12
 logging:
-  output_dir: outputs/joint_wan_physctrl
+  output_dir: outputs/joint_wan_physctrl_hyperparameters
   report_to: wandb
   project: joint-wan-physctrl
