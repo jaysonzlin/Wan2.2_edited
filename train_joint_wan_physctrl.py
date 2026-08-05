@@ -9,15 +9,24 @@ import torch
 from training.joint_config import load_joint_config
 
 
-def create_joint_optimizer(parameters) -> torch.optim.AdamW:
-    """Use the existing video trainer's AdamW hyperparameters for every trainable module."""
-    return torch.optim.AdamW(
-        parameters,
-        lr=1.0e-5,
-        betas=(0.9, 0.95),
-        eps=1.0e-8,
-        weight_decay=0.1,
-    )
+def create_joint_optimizer(model, optimizer_config: dict) -> torch.optim.AdamW:
+    """Create independently configured AdamW groups for video, BCA, and PC modules."""
+    groups = []
+    for name, parameters in (
+        ("video", model.wan_model.parameters()),
+        ("bca", model.bridges.parameters()),
+        ("pc", model.pc_model.parameters()),
+    ):
+        settings = optimizer_config[name]
+        groups.append({
+            "name": name,
+            "params": parameters,
+            "lr": settings["lr"],
+            "betas": tuple(settings["betas"]),
+            "eps": settings["eps"],
+            "weight_decay": settings["weight_decay"],
+        })
+    return torch.optim.AdamW(groups)
 
 
 def combine_joint_losses(video_loss: torch.Tensor, object_losses: torch.Tensor) -> torch.Tensor:
@@ -118,6 +127,12 @@ def _encode_videos(vae, videos: torch.Tensor) -> torch.Tensor:
 def _bridge_gradient_norm(model) -> torch.Tensor:
     norms = [parameter.grad.detach().norm() for parameter in model.bridges.parameters() if parameter.grad is not None]
     return torch.stack(norms).norm() if norms else torch.zeros((), device=next(model.parameters()).device)
+
+
+def pc_gradient_norm(model) -> torch.Tensor:
+    """Return the pre-clip global L2 gradient norm for the PhysCtrl model only."""
+    gradients = [parameter.grad.detach().norm() for parameter in model.pc_model.parameters() if parameter.grad is not None]
+    return torch.stack(gradients).norm() if gradients else torch.zeros(())
 
 
 @torch.no_grad()
@@ -240,7 +255,7 @@ def main(config: dict | None = None) -> None:
         objective_type="ddpm",
     )
     model = JointWanPhysCtrlModel(wan_model, pc_model)
-    optimizer = create_joint_optimizer(model.parameters())
+    optimizer = create_joint_optimizer(model, config["optimizer"])
     lr_scheduler = create_lr_scheduler(
         config["training"]["lr_scheduler"], optimizer,
         config["training"]["warmup_steps"], config["training"]["max_train_steps"],
@@ -298,6 +313,7 @@ def main(config: dict | None = None) -> None:
                 accelerator.backward(loss)
                 bridge_grad_norm = _bridge_gradient_norm(accelerator.unwrap_model(model))
                 wan_grad_norm = video_gradient_norm(accelerator.unwrap_model(model))
+                pc_grad_norm = pc_gradient_norm(accelerator.unwrap_model(model))
                 if accelerator.sync_gradients:
                     accelerator.clip_grad_norm_(model.parameters(), config["training"]["max_grad_norm"])
                 optimizer.step()
@@ -312,6 +328,7 @@ def main(config: dict | None = None) -> None:
                 "train/loss": loss.detach().item(),
                 "train/bridge_gradient_norm": bridge_grad_norm.detach().item(),
                 "train/video_gradient_norm": wan_grad_norm.detach().item(),
+                "train/pc_gradient_norm": pc_grad_norm.detach().item(),
                 "train/learning_rate": lr_scheduler.get_last_lr()[0],
             }
             metrics.update({f"train/pc_loss_object_{index:03d}": value.item() for index, value in enumerate(object_losses[0].detach())})

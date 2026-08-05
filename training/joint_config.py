@@ -45,15 +45,24 @@ def validate_joint_config(config: dict) -> None:
         raise ValueError("objective.pc_type must be 'ddpm_x0'")
     if objective.get("text_dropout_probability") != 0:
         raise ValueError("objective.text_dropout_probability must be 0")
-    expected_optimizer = {
-        "lr": 1.0e-5,
-        "betas": [0.9, 0.95],
-        "eps": 1.0e-8,
-        "weight_decay": 0.1,
-    }
-    for key, value in expected_optimizer.items():
-        if optimizer.get(key) != value:
-            raise ValueError(f"optimizer.{key} must be {value!r}")
+    for group_name in ("video", "bca", "pc"):
+        group = optimizer.get(group_name)
+        if not isinstance(group, dict):
+            raise ValueError(f"optimizer.{group_name} must be a mapping")
+        for key in ("lr", "eps", "weight_decay"):
+            value = group.get(key)
+            if not isinstance(value, (int, float)) or isinstance(value, bool):
+                raise ValueError(f"optimizer.{group_name}.{key} must be a number")
+        if group["lr"] <= 0 or group["eps"] <= 0 or group["weight_decay"] < 0:
+            raise ValueError(f"optimizer.{group_name} has invalid AdamW scalar hyperparameters")
+        betas = group.get("betas")
+        if (
+            not isinstance(betas, (list, tuple))
+            or len(betas) != 2
+            or any(not isinstance(beta, (int, float)) or isinstance(beta, bool) for beta in betas)
+            or any(beta < 0 or beta >= 1 for beta in betas)
+        ):
+            raise ValueError(f"optimizer.{group_name}.betas must be two values in [0, 1)")
     training = config.get("training", {})
     if not isinstance(training.get("denoised_latent_mse_every_steps"), int) or training["denoised_latent_mse_every_steps"] <= 0:
         raise ValueError("training.denoised_latent_mse_every_steps must be a positive integer")

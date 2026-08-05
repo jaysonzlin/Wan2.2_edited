@@ -24,10 +24,21 @@ objective:
   time_shift: 5.0
   text_dropout_probability: 0
 optimizer:
-  lr: 1.0e-5
-  betas: [0.9, 0.95]
-  eps: 1.0e-8
-  weight_decay: 0.1
+  video:
+    lr: 1.0e-5
+    betas: [0.9, 0.95]
+    eps: 1.0e-8
+    weight_decay: 0.1
+  bca:
+    lr: 1.0e-5
+    betas: [0.9, 0.95]
+    eps: 1.0e-8
+    weight_decay: 0.1
+  pc:
+    lr: 1.0e-4
+    betas: [0.9, 0.999]
+    eps: 1.0e-8
+    weight_decay: 1.0e-2
 training:
   seed: 42
   gradient_accumulation_steps: 1

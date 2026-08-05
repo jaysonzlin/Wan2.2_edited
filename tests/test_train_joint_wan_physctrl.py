@@ -7,6 +7,7 @@ from train_joint_wan_physctrl import (
     combine_joint_losses,
     create_joint_optimizer,
     load_joint_checkpoint_with_fallback,
+    pc_gradient_norm,
     prune_joint_checkpoints,
     should_log_denoised_latent_mse,
     should_save_joint_visualization,
@@ -14,21 +15,30 @@ from train_joint_wan_physctrl import (
 )
 
 
-def test_joint_optimizer_uses_one_default_video_parameter_group():
-    video = torch.nn.Linear(2, 2)
-    pc = torch.nn.Linear(2, 2)
-    bridge = torch.nn.Linear(2, 2)
+def _optimizer_config():
+    return {
+        "video": {"lr": 1.0e-5, "betas": [0.9, 0.95], "eps": 1.0e-8, "weight_decay": 0.1},
+        "bca": {"lr": 1.0e-5, "betas": [0.9, 0.95], "eps": 1.0e-8, "weight_decay": 0.1},
+        "pc": {"lr": 1.0e-4, "betas": [0.9, 0.999], "eps": 1.0e-8, "weight_decay": 1.0e-2},
+    }
 
-    optimizer = create_joint_optimizer(
-        list(video.parameters()) + list(pc.parameters()) + list(bridge.parameters())
-    )
 
-    assert len(optimizer.param_groups) == 1
-    group = optimizer.param_groups[0]
-    assert group["lr"] == 1.0e-5
-    assert group["betas"] == (0.9, 0.95)
-    assert group["eps"] == 1.0e-8
-    assert group["weight_decay"] == 0.1
+def test_joint_optimizer_uses_separate_configured_parameter_groups():
+    model = type("Joint", (), {
+        "wan_model": torch.nn.Linear(2, 2),
+        "bridges": torch.nn.ModuleList([torch.nn.Linear(2, 2)]),
+        "pc_model": torch.nn.Linear(2, 2),
+    })()
+
+    optimizer = create_joint_optimizer(model, _optimizer_config())
+
+    assert [group["name"] for group in optimizer.param_groups] == ["video", "bca", "pc"]
+    assert optimizer.param_groups[0]["lr"] == 1.0e-5
+    assert optimizer.param_groups[1]["betas"] == (0.9, 0.95)
+    assert optimizer.param_groups[2]["lr"] == 1.0e-4
+    assert optimizer.param_groups[2]["betas"] == (0.9, 0.999)
+    assert optimizer.param_groups[2]["eps"] == 1.0e-8
+    assert optimizer.param_groups[2]["weight_decay"] == 1.0e-2
 
 
 def test_joint_loss_adds_each_object_loss_without_averaging():
@@ -60,6 +70,18 @@ def test_video_gradient_norm_uses_wan_dit_gradients_only():
     )()
 
     assert video_gradient_norm(model).item() == 5.0
+
+
+def test_pc_gradient_norm_uses_pc_gradients_only():
+    pc_parameter = torch.nn.Parameter(torch.zeros(2))
+    video_parameter = torch.nn.Parameter(torch.zeros(2))
+    pc_parameter.grad = torch.tensor([3.0, 4.0])
+    video_parameter.grad = torch.tensor([100.0, 100.0])
+    model = type(
+        "Joint", (), {"pc_model": type("PC", (), {"parameters": lambda self: [pc_parameter]})()}
+    )()
+
+    assert pc_gradient_norm(model).item() == 5.0
 
 
 class _FakeAccelerator:

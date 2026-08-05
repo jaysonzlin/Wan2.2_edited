@@ -52,10 +52,21 @@ objective:
   pc_type: ddpm_x0
   text_dropout_probability: 0
 optimizer:
-  lr: 1.0e-5
-  betas: [0.9, 0.95]
-  eps: 1.0e-8
-  weight_decay: 0.1
+  video:
+    lr: 1.0e-5
+    betas: [0.9, 0.95]
+    eps: 1.0e-8
+    weight_decay: 0.1
+  bca:
+    lr: 1.0e-5
+    betas: [0.9, 0.95]
+    eps: 1.0e-8
+    weight_decay: 0.1
+  pc:
+    lr: 1.0e-4
+    betas: [0.9, 0.999]
+    eps: 1.0e-8
+    weight_decay: 1.0e-2
 training:
   denoised_latent_mse_every_steps: 50
   checkpoints_total_limit: 2
@@ -132,6 +143,17 @@ def test_joint_config_accepts_joint_contract_and_rejects_batching(tmp_path):
     path.write_text(_valid_config().replace("train_batch_size: 1", "train_batch_size: 2"))
     with pytest.raises(ValueError, match="data.train_batch_size must be 1"):
         load_joint_config(path, [])
+
+
+def test_joint_config_accepts_separate_optimizer_groups(tmp_path):
+    path = tmp_path / "joint.yaml"
+    path.write_text(_valid_config())
+
+    optimizer = load_joint_config(path, ["optimizer.pc.lr=2.0e-4"])["optimizer"]
+
+    assert optimizer["video"]["lr"] == 1.0e-5
+    assert optimizer["bca"]["betas"] == [0.9, 0.95]
+    assert optimizer["pc"]["lr"] == 2.0e-4
 
 
 def test_joint_config_rejects_invalid_resume_and_checkpoint_metric_settings(tmp_path):
