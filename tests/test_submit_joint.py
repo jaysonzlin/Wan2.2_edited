@@ -54,3 +54,20 @@ def test_soft_three_object_joint_launcher_uses_soft_dataset_and_isolated_output(
         "training.max_train_steps=10000",
     ):
         assert expected in script
+
+
+def test_rigid_three_object_joint_launcher_enables_the_configured_rigid_objective() -> None:
+    script = Path("submit_joint_3_rigid.sh").read_text()
+
+    for expected in (
+        "#SBATCH --job-name=joint_3_rigid_0.001",
+        "#SBATCH --cpus-per-task=4",
+        "logs/joint_3_rigid_0.001_%j.out",
+        "logs/joint_3_rigid_0.001_%j.err",
+        "data.dataset_root=td_832x480_3",
+        "logging.output_dir=outputs/joint_3_rigid_0.001",
+        "objective.enable_rigid_loss=true",
+        "objective.rigid_loss_weight=0.001",
+        "objective.rigid_loss_neighbors=4",
+    ):
+        assert expected in script
