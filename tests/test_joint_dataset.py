@@ -156,6 +156,44 @@ def test_joint_config_accepts_separate_optimizer_groups(tmp_path):
     assert optimizer["pc"]["lr"] == 2.0e-4
 
 
+def test_joint_config_accepts_rigid_loss_settings(tmp_path):
+    path = tmp_path / "joint.yaml"
+    path.write_text(
+        _valid_config().replace(
+            "  text_dropout_probability: 0",
+            "  text_dropout_probability: 0\n  rigid_loss_weight: 0.25\n  rigid_loss_neighbors: 8",
+        )
+    )
+
+    objective = load_joint_config(path, [])["objective"]
+
+    assert objective["rigid_loss_weight"] == 0.25
+    assert objective["rigid_loss_neighbors"] == 8
+
+
+@pytest.mark.parametrize(
+    ("setting", "value", "message"),
+    [
+        ("rigid_loss_weight", "-0.1", "rigid_loss_weight"),
+        ("rigid_loss_weight", "true", "rigid_loss_weight"),
+        ("rigid_loss_neighbors", "0", "rigid_loss_neighbors"),
+        ("rigid_loss_neighbors", "2048", "rigid_loss_neighbors"),
+        ("rigid_loss_neighbors", "true", "rigid_loss_neighbors"),
+    ],
+)
+def test_joint_config_rejects_invalid_rigid_loss_settings(tmp_path, setting, value, message):
+    path = tmp_path / "joint.yaml"
+    path.write_text(
+        _valid_config().replace(
+            "  text_dropout_probability: 0",
+            f"  text_dropout_probability: 0\n  {setting}: {value}",
+        )
+    )
+
+    with pytest.raises(ValueError, match=message):
+        load_joint_config(path, [])
+
+
 def test_joint_config_rejects_invalid_resume_and_checkpoint_metric_settings(tmp_path):
     path = tmp_path / "joint.yaml"
     path.write_text(_valid_config().replace("denoised_latent_mse_every_steps: 50", "denoised_latent_mse_every_steps: 0"))

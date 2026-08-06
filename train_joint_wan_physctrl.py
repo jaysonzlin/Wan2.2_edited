@@ -29,9 +29,19 @@ def create_joint_optimizer(model, optimizer_config: dict) -> torch.optim.AdamW:
     return torch.optim.AdamW(groups)
 
 
-def combine_joint_losses(video_loss: torch.Tensor, object_losses: torch.Tensor) -> torch.Tensor:
-    """Add Wan's video loss to every object x0 loss without object-count normalization."""
-    return video_loss + object_losses.sum()
+def combine_joint_losses(
+    video_loss: torch.Tensor,
+    object_losses: torch.Tensor,
+    rigid_loss_sum: torch.Tensor,
+    rigid_loss_weight: float,
+) -> torch.Tensor:
+    """Add video, x0, and weighted rigid losses without object-count normalization."""
+    return video_loss + object_losses.sum() + rigid_loss_weight * rigid_loss_sum
+
+
+def per_object_metric_values(prefix: str, losses: torch.Tensor) -> dict[str, float]:
+    """Name object-slot loss scalars consistently for tracker logging."""
+    return {f"{prefix}_{index:03d}": value.item() for index, value in enumerate(losses)}
 
 
 def should_save_joint_visualization(global_step: int, every_steps: int = 250) -> bool:
@@ -204,7 +214,11 @@ def main(config: dict | None = None) -> None:
     from torch.utils.data import DataLoader
     from transformers import get_constant_schedule_with_warmup, get_cosine_schedule_with_warmup
     from training.joint_dataset import JointWanPhysCtrlDataset, joint_collate
-    from training.joint_objectives import make_aligned_multi_object_pc_ddpm_batch, per_object_pc_x0_mse
+    from training.joint_objectives import (
+        make_aligned_multi_object_pc_ddpm_batch,
+        per_object_pc_x0_mse,
+        per_object_rigid_edge_length_loss,
+    )
     from training.schedules import create_lr_scheduler
     from training.wan_i2v_training import (
         expand_latent_timesteps,
@@ -309,7 +323,18 @@ def main(config: dict | None = None) -> None:
                 )
                 video_loss = masked_velocity_mse(torch.stack(video_prediction), flow.velocity_target, flow.loss_mask)
                 object_losses, pc_loss_sum = per_object_pc_x0_mse(pc_prediction, pc_batch.target)
-                loss = combine_joint_losses(video_loss, object_losses)
+                rigid_losses = per_object_rigid_edge_length_loss(
+                    point_clouds[:, :, 0],
+                    pc_prediction,
+                    neighbors=config["objective"].get("rigid_loss_neighbors", 16),
+                )
+                rigid_loss_sum = rigid_losses.sum()
+                loss = combine_joint_losses(
+                    video_loss,
+                    object_losses,
+                    rigid_loss_sum=rigid_loss_sum,
+                    rigid_loss_weight=config["objective"].get("rigid_loss_weight", 0.0),
+                )
                 accelerator.backward(loss)
                 bridge_grad_norm = _bridge_gradient_norm(accelerator.unwrap_model(model))
                 wan_grad_norm = video_gradient_norm(accelerator.unwrap_model(model))
@@ -325,13 +350,15 @@ def main(config: dict | None = None) -> None:
             metrics = {
                 "train/video_loss": video_loss.detach().item(),
                 "train/pc_loss_sum": pc_loss_sum.detach().item(),
+                "train/rigid_loss_sum": rigid_loss_sum.detach().item(),
                 "train/loss": loss.detach().item(),
                 "train/bridge_gradient_norm": bridge_grad_norm.detach().item(),
                 "train/video_gradient_norm": wan_grad_norm.detach().item(),
                 "train/pc_gradient_norm": pc_grad_norm.detach().item(),
                 "train/learning_rate": lr_scheduler.get_last_lr()[0],
             }
-            metrics.update({f"train/pc_loss_object_{index:03d}": value.item() for index, value in enumerate(object_losses[0].detach())})
+            metrics.update(per_object_metric_values("train/pc_loss_object", object_losses[0].detach()))
+            metrics.update(per_object_metric_values("train/rigid_loss_object", rigid_losses[0].detach()))
             accelerator.log(metrics, step=global_step)
             progress_bar.update(1)
             progress_bar.set_postfix(loss=f"{loss.detach().item():.4f}", lr=f"{lr_scheduler.get_last_lr()[0]:.2e}")

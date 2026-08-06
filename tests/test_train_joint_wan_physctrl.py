@@ -8,6 +8,7 @@ from train_joint_wan_physctrl import (
     create_joint_optimizer,
     load_joint_checkpoint_with_fallback,
     pc_gradient_norm,
+    per_object_metric_values,
     prune_joint_checkpoints,
     should_log_denoised_latent_mse,
     should_save_joint_visualization,
@@ -45,9 +46,36 @@ def test_joint_loss_adds_each_object_loss_without_averaging():
     video_loss = torch.tensor(2.0)
     object_losses = torch.tensor([[3.0, 5.0]])
 
-    total = combine_joint_losses(video_loss, object_losses)
+    total = combine_joint_losses(
+        video_loss,
+        object_losses,
+        rigid_loss_sum=torch.tensor(0.0),
+        rigid_loss_weight=0.0,
+    )
 
     assert total.item() == 10.0
+
+
+def test_joint_loss_adds_weighted_rigid_sum_without_object_averaging():
+    total = combine_joint_losses(
+        video_loss=torch.tensor(2.0),
+        object_losses=torch.tensor([[3.0, 5.0]]),
+        rigid_loss_sum=torch.tensor(7.0),
+        rigid_loss_weight=0.25,
+    )
+
+    assert total.item() == 11.75
+
+
+def test_per_object_metric_values_uses_zero_padded_slots():
+    metrics = per_object_metric_values(
+        "train/rigid_loss_object", torch.tensor([1.5, 2.5])
+    )
+
+    assert metrics == {
+        "train/rigid_loss_object_000": 1.5,
+        "train/rigid_loss_object_001": 2.5,
+    }
 
 
 def test_joint_visualization_runs_every_250_optimizer_steps():

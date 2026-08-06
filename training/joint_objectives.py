@@ -68,3 +68,68 @@ def per_object_pc_x0_mse(
         raise ValueError("prediction must include batch and object dimensions")
     losses = (prediction - target).square().flatten(start_dim=2).mean(dim=2)
     return losses, losses.sum()
+
+
+def per_object_rigid_edge_length_loss(
+    initial_point_clouds: torch.Tensor,
+    prediction: torch.Tensor,
+    neighbors: int,
+    epsilon: float = 1e-8,
+) -> torch.Tensor:
+    """Return each object's scale-normalized drift from its frame-zero geometry."""
+    if (
+        initial_point_clouds.ndim != 5
+        or initial_point_clouds.shape[2] != 1
+        or initial_point_clouds.shape[-1] != 3
+    ):
+        raise ValueError("initial_point_clouds must have shape [B, K, 1, N, 3]")
+    if prediction.ndim != 6 or prediction.shape[3] != 1 or prediction.shape[-1] != 3:
+        raise ValueError("prediction must have shape [B, K, T, 1, N, 3]")
+    if (
+        prediction.shape[:2] != initial_point_clouds.shape[:2]
+        or prediction.shape[-2:] != initial_point_clouds.shape[-2:]
+    ):
+        raise ValueError(
+            "initial_point_clouds and prediction must agree on batch, object, point, and coordinate dimensions"
+        )
+    point_count = initial_point_clouds.shape[-2]
+    if (
+        not isinstance(neighbors, int)
+        or isinstance(neighbors, bool)
+        or not 1 <= neighbors < point_count
+    ):
+        raise ValueError("neighbors must be an integer in [1, point_count)")
+
+    initial = initial_point_clouds.squeeze(2)
+    future = prediction.squeeze(3)
+    batch_size, object_count, frame_count, _, _ = future.shape
+    neighbor_indices = torch.topk(
+        torch.cdist(initial.float(), initial.float()),
+        k=neighbors + 1,
+        largest=False,
+    ).indices[..., 1:]
+
+    initial_neighbors = torch.gather(
+        initial.unsqueeze(3).expand(-1, -1, -1, neighbors, -1),
+        dim=2,
+        index=neighbor_indices.unsqueeze(-1).expand(-1, -1, -1, -1, 3),
+    )
+    initial_lengths = torch.linalg.vector_norm(initial_neighbors - initial.unsqueeze(3), dim=-1)
+
+    flat_future = future.reshape(batch_size * object_count * frame_count, point_count, 3)
+    flat_indices = neighbor_indices.unsqueeze(2).expand(
+        -1, -1, frame_count, -1, -1
+    ).reshape(batch_size * object_count * frame_count, point_count, neighbors)
+    future_neighbors = torch.gather(
+        flat_future.unsqueeze(2).expand(-1, -1, neighbors, -1),
+        dim=1,
+        index=flat_indices.unsqueeze(-1).expand(-1, -1, -1, 3),
+    )
+    future_lengths = torch.linalg.vector_norm(
+        future_neighbors - flat_future.unsqueeze(2), dim=-1
+    ).reshape(batch_size, object_count, frame_count, point_count, neighbors)
+
+    edge_drift = (future_lengths - initial_lengths.unsqueeze(2)).square() / (
+        initial_lengths.unsqueeze(2).square() + epsilon
+    )
+    return edge_drift.mean(dim=(2, 3, 4))

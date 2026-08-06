@@ -45,6 +45,22 @@ def validate_joint_config(config: dict) -> None:
         raise ValueError("objective.pc_type must be 'ddpm_x0'")
     if objective.get("text_dropout_probability") != 0:
         raise ValueError("objective.text_dropout_probability must be 0")
+    rigid_loss_weight = objective.get("rigid_loss_weight", 0.0)
+    if (
+        not isinstance(rigid_loss_weight, (int, float))
+        or isinstance(rigid_loss_weight, bool)
+        or rigid_loss_weight < 0
+    ):
+        raise ValueError("objective.rigid_loss_weight must be a non-negative number")
+    rigid_loss_neighbors = objective.get("rigid_loss_neighbors", 16)
+    if (
+        not isinstance(rigid_loss_neighbors, int)
+        or isinstance(rigid_loss_neighbors, bool)
+        or not 1 <= rigid_loss_neighbors < data["num_points"]
+    ):
+        raise ValueError(
+            "objective.rigid_loss_neighbors must be an integer in [1, data.num_points)"
+        )
     for group_name in ("video", "bca", "pc"):
         group = optimizer.get(group_name)
         if not isinstance(group, dict):
