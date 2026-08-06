@@ -1,12 +1,12 @@
 #!/bin/bash
-#SBATCH --job-name=wan_joint_physctrl_3_rigid
+#SBATCH --job-name=joint_wan_physctrl_3_rigid_4
 #SBATCH --partition=gpu_h200
 #SBATCH --gres=gpu:1
 #SBATCH --cpus-per-task=8
 #SBATCH --mem=64G
 #SBATCH --time=10:30:00
-#SBATCH --output=/n/lab_storage/ydu_lab/jaysonzlin/Wan2.2_edited/logs/wan_joint_physctrl_3_rigid_%j.out
-#SBATCH --error=/n/lab_storage/ydu_lab/jaysonzlin/Wan2.2_edited/logs/wan_joint_physctrl_3_rigid_%j.err
+#SBATCH --output=/n/lab_storage/ydu_lab/jaysonzlin/Wan2.2_edited/logs/joint_wan_physctrl_3_rigid_4_%j.out
+#SBATCH --error=/n/lab_storage/ydu_lab/jaysonzlin/Wan2.2_edited/logs/joint_wan_physctrl_3_rigid_4_%j.err
 
 set -euo pipefail
 
@@ -34,7 +34,7 @@ exec singularity exec --nv \
         train_joint_wan_physctrl.py \
         --config configs/train/joint_wan_physctrl_832x480.yaml \
         data.dataset_root=td_832x480_3 \
-        logging.output_dir=outputs/joint_wan_physctrl_3_rigid \
+        logging.output_dir=outputs/joint_wan_physctrl_3_rigid_4 \
         training.resume_from_checkpoint=latest \
         training.max_train_steps=10000 \
         objective.rigid_loss_weight=1.0 \
