@@ -23,6 +23,7 @@ objective:
   beta_schedule: linear
   time_shift: 5.0
   text_dropout_probability: 0
+  enable_rigid_loss: false
   rigid_loss_weight: 0.0
   rigid_loss_neighbors: 16
 optimizer:

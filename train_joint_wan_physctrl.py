@@ -44,6 +44,38 @@ def per_object_metric_values(prefix: str, losses: torch.Tensor) -> dict[str, flo
     return {f"{prefix}_{index:03d}": value.item() for index, value in enumerate(losses)}
 
 
+def rigid_loss_terms(
+    enabled: bool,
+    initial_point_clouds: torch.Tensor,
+    prediction: torch.Tensor,
+    *,
+    neighbors: int,
+    rigid_loss_fn,
+) -> torch.Tensor:
+    """Evaluate per-object rigidity only when the joint objective enables it."""
+    if not enabled:
+        return torch.zeros(
+            initial_point_clouds.shape[:2],
+            device=prediction.device,
+            dtype=prediction.dtype,
+        )
+    return rigid_loss_fn(initial_point_clouds, prediction, neighbors=neighbors)
+
+
+def add_rigid_metrics(
+    metrics: dict[str, float],
+    enabled: bool,
+    rigid_losses: torch.Tensor,
+) -> dict[str, float]:
+    """Append rigid objective metrics only when that objective ran."""
+    if enabled:
+        metrics["train/rigid_loss_sum"] = rigid_losses.sum().detach().item()
+        metrics.update(
+            per_object_metric_values("train/rigid_loss_object", rigid_losses[0].detach())
+        )
+    return metrics
+
+
 def should_save_joint_visualization(global_step: int, every_steps: int = 250) -> bool:
     if every_steps <= 0:
         raise ValueError("every_steps must be positive")
@@ -284,6 +316,7 @@ def main(config: dict | None = None) -> None:
     )
     model, optimizer, loader, lr_scheduler = accelerator.prepare(model, optimizer, loader, lr_scheduler)
     generator = torch.Generator(device=accelerator.device).manual_seed(config["training"]["seed"])
+    enable_rigid_loss = config["objective"].get("enable_rigid_loss", False)
     global_step = 0
     resume_path = load_joint_checkpoint_with_fallback(
         accelerator, output_dir, config["training"].get("resume_from_checkpoint")
@@ -323,10 +356,12 @@ def main(config: dict | None = None) -> None:
                 )
                 video_loss = masked_velocity_mse(torch.stack(video_prediction), flow.velocity_target, flow.loss_mask)
                 object_losses, pc_loss_sum = per_object_pc_x0_mse(pc_prediction, pc_batch.target)
-                rigid_losses = per_object_rigid_edge_length_loss(
+                rigid_losses = rigid_loss_terms(
+                    enable_rigid_loss,
                     point_clouds[:, :, 0],
                     pc_prediction,
                     neighbors=config["objective"].get("rigid_loss_neighbors", 16),
+                    rigid_loss_fn=per_object_rigid_edge_length_loss,
                 )
                 rigid_loss_sum = rigid_losses.sum()
                 loss = combine_joint_losses(
@@ -350,7 +385,6 @@ def main(config: dict | None = None) -> None:
             metrics = {
                 "train/video_loss": video_loss.detach().item(),
                 "train/pc_loss_sum": pc_loss_sum.detach().item(),
-                "train/rigid_loss_sum": rigid_loss_sum.detach().item(),
                 "train/loss": loss.detach().item(),
                 "train/bridge_gradient_norm": bridge_grad_norm.detach().item(),
                 "train/video_gradient_norm": wan_grad_norm.detach().item(),
@@ -358,7 +392,7 @@ def main(config: dict | None = None) -> None:
                 "train/learning_rate": lr_scheduler.get_last_lr()[0],
             }
             metrics.update(per_object_metric_values("train/pc_loss_object", object_losses[0].detach()))
-            metrics.update(per_object_metric_values("train/rigid_loss_object", rigid_losses[0].detach()))
+            add_rigid_metrics(metrics, enable_rigid_loss, rigid_losses)
             accelerator.log(metrics, step=global_step)
             progress_bar.update(1)
             progress_bar.set_postfix(loss=f"{loss.detach().item():.4f}", lr=f"{lr_scheduler.get_last_lr()[0]:.2e}")

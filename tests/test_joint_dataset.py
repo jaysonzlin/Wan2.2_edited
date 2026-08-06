@@ -171,6 +171,32 @@ def test_joint_config_accepts_rigid_loss_settings(tmp_path):
     assert objective["rigid_loss_neighbors"] == 8
 
 
+def test_joint_config_accepts_boolean_rigid_loss_toggle(tmp_path):
+    path = tmp_path / "joint.yaml"
+    path.write_text(
+        _valid_config().replace(
+            "  text_dropout_probability: 0",
+            "  text_dropout_probability: 0\n  enable_rigid_loss: true",
+        )
+    )
+
+    assert load_joint_config(path, [])["objective"]["enable_rigid_loss"] is True
+
+
+@pytest.mark.parametrize("value", ["1", '"true"', "null"])
+def test_joint_config_rejects_non_boolean_rigid_loss_toggle(tmp_path, value):
+    path = tmp_path / "joint.yaml"
+    path.write_text(
+        _valid_config().replace(
+            "  text_dropout_probability: 0",
+            f"  text_dropout_probability: 0\n  enable_rigid_loss: {value}",
+        )
+    )
+
+    with pytest.raises(ValueError, match="enable_rigid_loss"):
+        load_joint_config(path, [])
+
+
 @pytest.mark.parametrize(
     ("setting", "value", "message"),
     [

@@ -4,12 +4,14 @@ import pytest
 import torch
 
 from train_joint_wan_physctrl import (
+    add_rigid_metrics,
     combine_joint_losses,
     create_joint_optimizer,
     load_joint_checkpoint_with_fallback,
     pc_gradient_norm,
     per_object_metric_values,
     prune_joint_checkpoints,
+    rigid_loss_terms,
     should_log_denoised_latent_mse,
     should_save_joint_visualization,
     video_gradient_norm,
@@ -73,6 +75,69 @@ def test_per_object_metric_values_uses_zero_padded_slots():
     )
 
     assert metrics == {
+        "train/rigid_loss_object_000": 1.5,
+        "train/rigid_loss_object_001": 2.5,
+    }
+
+
+def test_disabled_rigid_loss_returns_zeros_without_evaluating_objective():
+    initial_point_clouds = torch.zeros((1, 2, 1, 4, 3))
+    prediction = torch.zeros((1, 2, 48, 1, 4, 3))
+
+    def unexpected_objective(*_args, **_kwargs):
+        raise AssertionError("disabled rigid loss must not evaluate its objective")
+
+    losses = rigid_loss_terms(
+        False,
+        initial_point_clouds,
+        prediction,
+        neighbors=2,
+        rigid_loss_fn=unexpected_objective,
+    )
+
+    assert torch.equal(losses, torch.zeros((1, 2)))
+    assert losses.device == prediction.device
+    assert losses.dtype == prediction.dtype
+
+
+def test_enabled_rigid_loss_uses_the_existing_objective_result():
+    initial_point_clouds = torch.zeros((1, 2, 1, 4, 3))
+    prediction = torch.zeros((1, 2, 48, 1, 4, 3))
+    expected = torch.tensor([[1.5, 2.5]])
+    observed = {}
+
+    def objective(initial, predicted, *, neighbors):
+        observed.update(initial=initial, predicted=predicted, neighbors=neighbors)
+        return expected
+
+    losses = rigid_loss_terms(
+        True,
+        initial_point_clouds,
+        prediction,
+        neighbors=3,
+        rigid_loss_fn=objective,
+    )
+
+    assert losses is expected
+    assert observed == {
+        "initial": initial_point_clouds,
+        "predicted": prediction,
+        "neighbors": 3,
+    }
+
+
+def test_disabled_rigid_loss_emits_no_rigid_metrics():
+    metrics = add_rigid_metrics({"train/loss": 1.0}, False, torch.tensor([[1.5, 2.5]]))
+
+    assert metrics == {"train/loss": 1.0}
+
+
+def test_enabled_rigid_loss_emits_sum_and_per_object_metrics():
+    metrics = add_rigid_metrics({"train/loss": 1.0}, True, torch.tensor([[1.5, 2.5]]))
+
+    assert metrics == {
+        "train/loss": 1.0,
+        "train/rigid_loss_sum": 4.0,
         "train/rigid_loss_object_000": 1.5,
         "train/rigid_loss_object_001": 2.5,
     }

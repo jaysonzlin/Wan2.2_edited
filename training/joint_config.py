@@ -45,6 +45,9 @@ def validate_joint_config(config: dict) -> None:
         raise ValueError("objective.pc_type must be 'ddpm_x0'")
     if objective.get("text_dropout_probability") != 0:
         raise ValueError("objective.text_dropout_probability must be 0")
+    enable_rigid_loss = objective.get("enable_rigid_loss", False)
+    if not isinstance(enable_rigid_loss, bool):
+        raise ValueError("objective.enable_rigid_loss must be a boolean")
     rigid_loss_weight = objective.get("rigid_loss_weight", 0.0)
     if (
         not isinstance(rigid_loss_weight, (int, float))
