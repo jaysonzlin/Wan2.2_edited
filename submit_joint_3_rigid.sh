@@ -37,4 +37,5 @@ exec singularity exec --nv \
         logging.output_dir=outputs/joint_wan_physctrl_3_rigid \
         training.resume_from_checkpoint=latest \
         training.max_train_steps=10000 \
-        objective.rigid_loss_weight=1.0
+        objective.rigid_loss_weight=1.0 \
+        objective.rigid_loss_neighbors=4
