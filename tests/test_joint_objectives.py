@@ -170,3 +170,24 @@ def test_deformation_loss_increases_for_perturbed_future_and_preserves_gradients
     assert loss.item() > 0
     assert prediction.grad is not None
     assert prediction.grad.abs().sum().item() > 0
+
+
+def test_deformation_loss_handles_an_outside_predicted_position():
+    """An untrained x0 trajectory must not index outside the fixed P2G grid."""
+    fields = _static_deformation_inputs()
+    prediction = fields["future"].clone()
+    prediction[:, :, 0, :, 0].fill_(1_000.0)
+
+    loss = per_object_baseline_corrected_deform_loss(
+        fields["initial"],
+        prediction,
+        fields["deformation"],
+        fields["affine_velocity"],
+        fields["volume"],
+        fields["baseline"],
+        fields["origin"],
+        fields["scale"],
+        grid_size=8,
+    )
+
+    assert torch.isfinite(loss).all()

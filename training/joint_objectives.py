@@ -164,22 +164,26 @@ def _physctrl_deformation_frame_loss(
     dx = grid_lim / grid_size
     inv_dx = 1.0 / dx
     positions = particle_x.float().flatten(0, 1)
-    velocities = (
-        ((particle_x_two_ahead - particle_x) / (2.0 * dt)).float().flatten(0, 1)
-    )
+    positions_two_ahead = particle_x_two_ahead.float().flatten(0, 1)
     deformation = particle_f.float().flatten(0, 1)
     deformation_next = particle_f_next.float().flatten(0, 1)
     affine_velocity = particle_c.float().flatten(0, 1)
     volumes = particle_volume.float().flatten(0, 1)
     expected_baseline = baseline.float().flatten(0, 1)
 
-    grid_positions = positions * inv_dx
+    # Early x0 predictions are unconstrained and can lie far beyond the GT-fitted grid.
+    # Project the transfer endpoints into the valid quadratic B-spline support instead of
+    # aborting training or using invalid grid indices. The primary x0 loss still supplies
+    # the restoring gradient for positions outside this physical domain.
+    max_grid_position = grid_size - 1.5 - grid_size * torch.finfo(positions.dtype).eps
+    grid_positions = (positions * inv_dx).clamp(0.0, max_grid_position)
+    grid_positions_two_ahead = (positions_two_ahead * inv_dx).clamp(
+        0.0, max_grid_position
+    )
+    positions = grid_positions * dx
+    velocities = (grid_positions_two_ahead - grid_positions) * dx / (2.0 * dt)
     base = (grid_positions - 0.5).to(torch.int64)
     fractions = grid_positions - base
-    if bool((base < 0).any()) or bool((base + 2 >= grid_size).any()):
-        raise ValueError(
-            "deformation grid transform places a particle outside the transfer domain"
-        )
     weights = torch.stack(
         (
             0.5 * (1.5 - fractions).square(),
