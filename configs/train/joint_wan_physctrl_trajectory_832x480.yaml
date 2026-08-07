@@ -41,8 +41,8 @@ optimizer:
     eps: 1.0e-8
     weight_decay: 1.0e-2
 trajectory:
-  start_frame: 1
-  future_frames: 48
+  start_frame: 13
+  future_frames: 24
 training:
   seed: 42
   gradient_accumulation_steps: 1
@@ -61,6 +61,6 @@ visualization:
   every_steps: 250
   fps: 12
 logging:
-  output_dir: outputs/joint_trajectory_i1_n48
+  output_dir: outputs/joint_trajectory_12_37
   report_to: wandb
   project: joint-wan-physctrl
