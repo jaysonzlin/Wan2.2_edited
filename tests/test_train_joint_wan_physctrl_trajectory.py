@@ -30,7 +30,7 @@ def test_trajectory_training_config_declares_a_fresh_fixed_window():
     with open("configs/train/joint_wan_physctrl_trajectory_832x480.yaml") as handle:
         config = yaml.safe_load(handle)
 
-    assert config["trajectory"] == {"start_frame": 1, "future_frames": 48}
+    assert config["trajectory"] == {"start_frame": 13, "future_frames": 24}
     assert config["objective"]["enable_rigid_loss"] is False
     assert config["objective"]["enable_deform_loss"] is False
     assert config["training"]["resume_from_checkpoint"] is None

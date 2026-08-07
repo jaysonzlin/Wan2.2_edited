@@ -1,3 +1,5 @@
+from types import SimpleNamespace
+
 import torch
 
 from wan.joint_pc_pipeline import JointWanPhysCtrlPipeline
@@ -20,8 +22,9 @@ class _Scheduler:
 
 
 class _JointModel:
-    def __init__(self):
+    def __init__(self, n_future_frames=48):
         self.calls = []
+        self.pc_model = SimpleNamespace(n_future_frames=n_future_frames)
 
     def __call__(self, **kwargs):
         self.calls.append(kwargs)
@@ -59,3 +62,27 @@ def test_joint_pipeline_evaluates_both_branches_once_per_synchronized_outer_step
     assert model.calls[0]["frame_times"].shape == (1, 2, 49)
     assert model.calls[0]["init_pc"].eq(init_pc.unsqueeze(0)).all()
     assert model.calls[0]["video_t"].shape == (1, 3)
+
+
+def test_joint_pipeline_uses_the_pc_model_configured_horizon():
+    model = _JointModel(n_future_frames=24)
+    video_scheduler = _Scheduler([9])
+    pc_scheduler = _Scheduler([999])
+    pipeline = JointWanPhysCtrlPipeline(model, video_scheduler, pc_scheduler, time_shift=5.0)
+    condition = torch.zeros((2, 1, 2, 2))
+    init_pc = torch.zeros((2, 1, 3, 3))
+    velocities = torch.zeros((2, 1, 3))
+
+    result = pipeline(
+        condition_latent=condition,
+        video_shape=(2, 3, 2, 2),
+        context=[torch.zeros(1, 4)],
+        initial_point_clouds=init_pc,
+        initial_linear_velocities=velocities,
+        initial_angular_velocities=velocities,
+        num_inference_steps=1,
+        generator=torch.Generator().manual_seed(0),
+    )
+
+    assert result.future_point_clouds.shape == (1, 2, 24, 1, 3, 3)
+    assert model.calls[0]["frame_times"].shape == (1, 2, 25)

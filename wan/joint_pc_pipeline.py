@@ -51,10 +51,11 @@ class JointWanPhysCtrlPipeline:
             raise ValueError("initial_point_clouds must have shape [K, 1, N, 3]")
         device = condition_latent.device
         object_count, _, point_count, _ = initial_point_clouds.shape
+        future_frame_count = self.model.pc_model.n_future_frames
         video_state = torch.randn(video_shape, device=device, dtype=condition_latent.dtype, generator=generator)
         video_state[:, :1] = condition_latent
         point_state = torch.randn(
-            (1, object_count, 48, 1, point_count, 3),
+            (1, object_count, future_frame_count, 1, point_count, 3),
             device=device,
             dtype=initial_point_clouds.dtype,
             generator=generator,
@@ -72,7 +73,10 @@ class JointWanPhysCtrlPipeline:
             )
             video_frame_times[:, 0] = 0
             frame_times = torch.full(
-                (1, object_count, 49), pc_timestep.item(), device=device, dtype=point_state.dtype
+                (1, object_count, future_frame_count + 1),
+                pc_timestep.item(),
+                device=device,
+                dtype=point_state.dtype,
             )
             video_prediction, pc_prediction = self.model(
                 video_x=[video_state],
