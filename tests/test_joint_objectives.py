@@ -3,6 +3,7 @@ import torch
 
 from training.joint_objectives import (
     make_aligned_multi_object_pc_ddpm_batch,
+    per_object_baseline_corrected_deform_loss,
     per_object_rigid_edge_length_loss,
     per_object_pc_x0_mse,
 )
@@ -68,7 +69,9 @@ def test_per_object_rigid_edge_length_loss_is_zero_for_rigid_motion():
     rotation = torch.tensor([[0.0, -1.0, 0.0], [1.0, 0.0, 0.0], [0.0, 0.0, 1.0]])
     translation = torch.tensor([[[[2.0, 4.0, -3.0]], [[-1.0, 3.0, 2.0]]]])
     rigid_future = initial[:, :, 0] @ rotation.T + translation
-    prediction = rigid_future.unsqueeze(2).unsqueeze(3).expand(-1, -1, 48, 1, -1, -1).clone()
+    prediction = (
+        rigid_future.unsqueeze(2).unsqueeze(3).expand(-1, -1, 48, 1, -1, -1).clone()
+    )
 
     losses = per_object_rigid_edge_length_loss(initial, prediction, neighbors=2)
 
@@ -78,7 +81,9 @@ def test_per_object_rigid_edge_length_loss_is_zero_for_rigid_motion():
 
 def test_per_object_rigid_edge_length_loss_is_positive_for_nonrigid_motion():
     initial = _two_object_initial_point_clouds()
-    prediction = initial[:, :, 0].unsqueeze(2).unsqueeze(3).expand(-1, -1, 48, 1, -1, -1).clone()
+    prediction = (
+        initial[:, :, 0].unsqueeze(2).unsqueeze(3).expand(-1, -1, 48, 1, -1, -1).clone()
+    )
     prediction[:, 1, :, :, 0] *= 2
 
     losses = per_object_rigid_edge_length_loss(initial, prediction, neighbors=2)
@@ -93,3 +98,75 @@ def test_per_object_rigid_edge_length_loss_rejects_invalid_neighbor_count():
 
     with pytest.raises(ValueError, match="neighbors"):
         per_object_rigid_edge_length_loss(initial, prediction, neighbors=4)
+
+
+def _static_deformation_inputs():
+    points = torch.tensor(
+        [
+            [3.0, 3.0, 3.0],
+            [3.0, 3.0, 5.0],
+            [3.0, 5.0, 3.0],
+            [3.0, 5.0, 5.0],
+            [5.0, 3.0, 3.0],
+            [5.0, 3.0, 5.0],
+            [5.0, 5.0, 3.0],
+            [5.0, 5.0, 5.0],
+        ]
+    )
+    initial = points.reshape(1, 1, 1, 8, 3)
+    future = points.reshape(1, 1, 1, 1, 8, 3).expand(-1, -1, 48, -1, -1, -1).clone()
+    identity = torch.eye(3).reshape(1, 1, 1, 1, 1, 3, 3)
+    deformation = identity.expand(1, 1, 49, 1, 8, -1, -1).clone()
+    affine_velocity = torch.zeros_like(deformation)
+    return {
+        "initial": initial,
+        "future": future,
+        "deformation": deformation,
+        "affine_velocity": affine_velocity,
+        "volume": torch.ones((1, 1, 1, 8)),
+        "baseline": torch.zeros((1, 1, 47, 1, 8, 3, 3)),
+        "origin": torch.zeros((1, 1, 3)),
+        "scale": torch.ones((1, 1, 1)),
+    }
+
+
+def test_deformation_loss_cancels_saved_gt_baseline():
+    fields = _static_deformation_inputs()
+
+    loss = per_object_baseline_corrected_deform_loss(
+        fields["initial"],
+        fields["future"],
+        fields["deformation"],
+        fields["affine_velocity"],
+        fields["volume"],
+        fields["baseline"],
+        fields["origin"],
+        fields["scale"],
+        grid_size=8,
+    )
+
+    assert loss.shape == (1, 1)
+    assert torch.allclose(loss, torch.zeros_like(loss), atol=1e-7)
+
+
+def test_deformation_loss_increases_for_perturbed_future_and_preserves_gradients():
+    fields = _static_deformation_inputs()
+    prediction = fields["future"].clone().requires_grad_()
+    prediction.data[:, :, 10, :, 0, 0] += 0.1
+
+    loss = per_object_baseline_corrected_deform_loss(
+        fields["initial"],
+        prediction,
+        fields["deformation"],
+        fields["affine_velocity"],
+        fields["volume"],
+        fields["baseline"],
+        fields["origin"],
+        fields["scale"],
+        grid_size=8,
+    )
+    loss.sum().backward()
+
+    assert loss.item() > 0
+    assert prediction.grad is not None
+    assert prediction.grad.abs().sum().item() > 0

@@ -64,6 +64,25 @@ def validate_joint_config(config: dict) -> None:
         raise ValueError(
             "objective.rigid_loss_neighbors must be an integer in [1, data.num_points)"
         )
+    enable_deform_loss = objective.get("enable_deform_loss", False)
+    if not isinstance(enable_deform_loss, bool):
+        raise ValueError("objective.enable_deform_loss must be a boolean")
+    deform_loss_weight = objective.get("deform_loss_weight", 0.001)
+    if (
+        not isinstance(deform_loss_weight, (int, float))
+        or isinstance(deform_loss_weight, bool)
+        or deform_loss_weight < 0
+    ):
+        raise ValueError("objective.deform_loss_weight must be a non-negative number")
+    deform_loss_neighbors = objective.get("deform_loss_neighbors", 32)
+    if (
+        not isinstance(deform_loss_neighbors, int)
+        or isinstance(deform_loss_neighbors, bool)
+        or not 1 <= deform_loss_neighbors < data["num_points"]
+    ):
+        raise ValueError(
+            "objective.deform_loss_neighbors must be an integer in [1, data.num_points)"
+        )
     for group_name in ("video", "bca", "pc"):
         group = optimizer.get(group_name)
         if not isinstance(group, dict):

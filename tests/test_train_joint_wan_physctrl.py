@@ -4,9 +4,11 @@ import pytest
 import torch
 
 from train_joint_wan_physctrl import (
+    add_deform_metrics,
     add_rigid_metrics,
     combine_joint_losses,
     create_joint_optimizer,
+    deform_loss_terms,
     load_joint_checkpoint_with_fallback,
     pc_gradient_norm,
     per_object_metric_values,
@@ -20,18 +22,32 @@ from train_joint_wan_physctrl import (
 
 def _optimizer_config():
     return {
-        "video": {"lr": 1.0e-5, "betas": [0.9, 0.95], "eps": 1.0e-8, "weight_decay": 0.1},
+        "video": {
+            "lr": 1.0e-5,
+            "betas": [0.9, 0.95],
+            "eps": 1.0e-8,
+            "weight_decay": 0.1,
+        },
         "bca": {"lr": 1.0e-5, "betas": [0.9, 0.95], "eps": 1.0e-8, "weight_decay": 0.1},
-        "pc": {"lr": 1.0e-4, "betas": [0.9, 0.999], "eps": 1.0e-8, "weight_decay": 1.0e-2},
+        "pc": {
+            "lr": 1.0e-4,
+            "betas": [0.9, 0.999],
+            "eps": 1.0e-8,
+            "weight_decay": 1.0e-2,
+        },
     }
 
 
 def test_joint_optimizer_uses_separate_configured_parameter_groups():
-    model = type("Joint", (), {
-        "wan_model": torch.nn.Linear(2, 2),
-        "bridges": torch.nn.ModuleList([torch.nn.Linear(2, 2)]),
-        "pc_model": torch.nn.Linear(2, 2),
-    })()
+    model = type(
+        "Joint",
+        (),
+        {
+            "wan_model": torch.nn.Linear(2, 2),
+            "bridges": torch.nn.ModuleList([torch.nn.Linear(2, 2)]),
+            "pc_model": torch.nn.Linear(2, 2),
+        },
+    )()
 
     optimizer = create_joint_optimizer(model, _optimizer_config())
 
@@ -67,6 +83,19 @@ def test_joint_loss_adds_weighted_rigid_sum_without_object_averaging():
     )
 
     assert total.item() == 11.75
+
+
+def test_joint_loss_adds_weighted_deform_sum_without_object_averaging():
+    total = combine_joint_losses(
+        video_loss=torch.tensor(2.0),
+        object_losses=torch.tensor([[3.0, 5.0]]),
+        rigid_loss_sum=torch.tensor(0.0),
+        rigid_loss_weight=0.0,
+        deform_loss_sum=torch.tensor(7.0),
+        deform_loss_weight=0.001,
+    )
+
+    assert total.item() == pytest.approx(10.007)
 
 
 def test_per_object_metric_values_uses_zero_padded_slots():
@@ -126,6 +155,56 @@ def test_enabled_rigid_loss_uses_the_existing_objective_result():
     }
 
 
+def _deform_fields(object_count=2, points=4):
+    return {
+        "deform_f": torch.zeros((1, object_count, 49, 1, points, 3, 3)),
+        "deform_c": torch.zeros((1, object_count, 49, 1, points, 3, 3)),
+        "deform_volume": torch.ones((1, object_count, 1, points)),
+        "deform_baseline": torch.zeros((1, object_count, 47, 1, points, 3, 3)),
+        "deform_grid_origin": torch.zeros((1, object_count, 3)),
+        "deform_grid_scale": torch.ones((1, object_count, 1)),
+    }
+
+
+def test_disabled_deform_loss_returns_zeros_without_evaluating_objective():
+    initial = torch.zeros((1, 2, 1, 4, 3))
+    prediction = torch.zeros((1, 2, 48, 1, 4, 3))
+
+    def unexpected_objective(*_args, **_kwargs):
+        raise AssertionError("disabled deform loss must not evaluate its objective")
+
+    losses = deform_loss_terms(
+        False,
+        initial,
+        prediction,
+        **_deform_fields(),
+        deform_loss_fn=unexpected_objective,
+    )
+
+    assert torch.equal(losses, torch.zeros((1, 2)))
+
+
+def test_enabled_deform_loss_uses_the_existing_objective_result():
+    initial = torch.zeros((1, 2, 1, 4, 3))
+    prediction = torch.zeros((1, 2, 48, 1, 4, 3))
+    expected = torch.tensor([[1.5, 2.5]])
+    observed = {}
+
+    def objective(initial_arg, prediction_arg, **fields):
+        observed.update(initial=initial_arg, prediction=prediction_arg, fields=fields)
+        return expected
+
+    fields = _deform_fields()
+    losses = deform_loss_terms(
+        True, initial, prediction, **fields, deform_loss_fn=objective
+    )
+
+    assert losses is expected
+    assert observed["initial"] is initial
+    assert observed["prediction"] is prediction
+    assert observed["fields"] == fields
+
+
 def test_disabled_rigid_loss_emits_no_rigid_metrics():
     metrics = add_rigid_metrics({"train/loss": 1.0}, False, torch.tensor([[1.5, 2.5]]))
 
@@ -140,6 +219,21 @@ def test_enabled_rigid_loss_emits_sum_and_per_object_metrics():
         "train/rigid_loss_sum": 4.0,
         "train/rigid_loss_object_000": 1.5,
         "train/rigid_loss_object_001": 2.5,
+    }
+
+
+def test_deform_metrics_are_gated_and_use_per_object_slots():
+    disabled = add_deform_metrics(
+        {"train/loss": 1.0}, False, torch.tensor([[1.5, 2.5]])
+    )
+    enabled = add_deform_metrics({"train/loss": 1.0}, True, torch.tensor([[1.5, 2.5]]))
+
+    assert disabled == {"train/loss": 1.0}
+    assert enabled == {
+        "train/loss": 1.0,
+        "train/deform_loss_sum": 4.0,
+        "train/deform_loss_object_000": 1.5,
+        "train/deform_loss_object_001": 2.5,
     }
 
 
@@ -159,7 +253,9 @@ def test_video_gradient_norm_uses_wan_dit_gradients_only():
     wan_parameter.grad = torch.tensor([3.0, 4.0])
     pc_parameter.grad = torch.tensor([100.0, 100.0])
     model = type(
-        "Joint", (), {"wan_model": type("Wan", (), {"parameters": lambda self: [wan_parameter]})()}
+        "Joint",
+        (),
+        {"wan_model": type("Wan", (), {"parameters": lambda self: [wan_parameter]})()},
     )()
 
     assert video_gradient_norm(model).item() == 5.0
@@ -171,7 +267,9 @@ def test_pc_gradient_norm_uses_pc_gradients_only():
     pc_parameter.grad = torch.tensor([3.0, 4.0])
     video_parameter.grad = torch.tensor([100.0, 100.0])
     model = type(
-        "Joint", (), {"pc_model": type("PC", (), {"parameters": lambda self: [pc_parameter]})()}
+        "Joint",
+        (),
+        {"pc_model": type("PC", (), {"parameters": lambda self: [pc_parameter]})()},
     )()
 
     assert pc_gradient_norm(model).item() == 5.0
@@ -205,4 +303,7 @@ def test_joint_checkpoint_pruning_keeps_the_newest_two(tmp_path):
 
     prune_joint_checkpoints(tmp_path, limit=2)
 
-    assert {path.name for path in tmp_path.iterdir()} == {"checkpoint-100", "checkpoint-150"}
+    assert {path.name for path in tmp_path.iterdir()} == {
+        "checkpoint-100",
+        "checkpoint-150",
+    }

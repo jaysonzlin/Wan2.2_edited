@@ -18,14 +18,16 @@ def create_joint_optimizer(model, optimizer_config: dict) -> torch.optim.AdamW:
         ("pc", model.pc_model.parameters()),
     ):
         settings = optimizer_config[name]
-        groups.append({
-            "name": name,
-            "params": parameters,
-            "lr": settings["lr"],
-            "betas": tuple(settings["betas"]),
-            "eps": settings["eps"],
-            "weight_decay": settings["weight_decay"],
-        })
+        groups.append(
+            {
+                "name": name,
+                "params": parameters,
+                "lr": settings["lr"],
+                "betas": tuple(settings["betas"]),
+                "eps": settings["eps"],
+                "weight_decay": settings["weight_decay"],
+            }
+        )
     return torch.optim.AdamW(groups)
 
 
@@ -34,9 +36,16 @@ def combine_joint_losses(
     object_losses: torch.Tensor,
     rigid_loss_sum: torch.Tensor,
     rigid_loss_weight: float,
+    deform_loss_sum: torch.Tensor | None = None,
+    deform_loss_weight: float = 0.0,
 ) -> torch.Tensor:
-    """Add video, x0, and weighted rigid losses without object-count normalization."""
-    return video_loss + object_losses.sum() + rigid_loss_weight * rigid_loss_sum
+    """Add video, x0, and optional per-object auxiliary losses without averaging objects."""
+    total = video_loss + object_losses.sum() + rigid_loss_weight * rigid_loss_sum
+    return (
+        total
+        if deform_loss_sum is None
+        else total + deform_loss_weight * deform_loss_sum
+    )
 
 
 def per_object_metric_values(prefix: str, losses: torch.Tensor) -> dict[str, float]:
@@ -71,7 +80,70 @@ def add_rigid_metrics(
     if enabled:
         metrics["train/rigid_loss_sum"] = rigid_losses.sum().detach().item()
         metrics.update(
-            per_object_metric_values("train/rigid_loss_object", rigid_losses[0].detach())
+            per_object_metric_values(
+                "train/rigid_loss_object", rigid_losses[0].detach()
+            )
+        )
+    return metrics
+
+
+def deform_loss_terms(
+    enabled: bool,
+    initial_point_clouds: torch.Tensor,
+    prediction: torch.Tensor,
+    *,
+    deform_f: torch.Tensor | None = None,
+    deform_c: torch.Tensor | None = None,
+    deform_volume: torch.Tensor | None = None,
+    deform_baseline: torch.Tensor | None = None,
+    deform_grid_origin: torch.Tensor | None = None,
+    deform_grid_scale: torch.Tensor | None = None,
+    deform_loss_fn=None,
+) -> torch.Tensor:
+    """Evaluate deformation supervision only after its optional HDF5 contract was loaded."""
+    if not enabled:
+        return torch.zeros(
+            initial_point_clouds.shape[:2],
+            device=prediction.device,
+            dtype=prediction.dtype,
+        )
+    if any(
+        value is None
+        for value in (
+            deform_f,
+            deform_c,
+            deform_volume,
+            deform_baseline,
+            deform_grid_origin,
+            deform_grid_scale,
+            deform_loss_fn,
+        )
+    ):
+        raise ValueError(
+            "enabled deform loss requires all deformation fields and an objective"
+        )
+    return deform_loss_fn(
+        initial_point_clouds,
+        prediction,
+        deform_f=deform_f,
+        deform_c=deform_c,
+        deform_volume=deform_volume,
+        deform_baseline=deform_baseline,
+        deform_grid_origin=deform_grid_origin,
+        deform_grid_scale=deform_grid_scale,
+    )
+
+
+def add_deform_metrics(
+    metrics: dict[str, float], enabled: bool, deform_losses: torch.Tensor
+) -> dict[str, float]:
+    """Append deformation objective metrics only when that objective ran."""
+    if enabled:
+        metrics["train/deform_loss_sum"] = deform_losses.sum().detach().item()
+        metrics.update(
+            per_object_metric_values(
+                "train/deform_loss_object", deform_losses[0].detach()
+            )
         )
     return metrics
 
@@ -90,7 +162,11 @@ def should_log_denoised_latent_mse(global_step: int, every_steps: int = 50) -> b
 
 def video_gradient_norm(model) -> torch.Tensor:
     """Return the pre-clip global L2 gradient norm for the Wan DiT only."""
-    gradients = [parameter.grad.detach().norm() for parameter in model.wan_model.parameters() if parameter.grad is not None]
+    gradients = [
+        parameter.grad.detach().norm()
+        for parameter in model.wan_model.parameters()
+        if parameter.grad is not None
+    ]
     return torch.stack(gradients).norm() if gradients else torch.zeros(())
 
 
@@ -114,7 +190,8 @@ def _joint_checkpoint_paths(output_dir: Path, setting: str | None) -> list[Path]
         return [Path(setting)]
     return sorted(
         (
-            path for path in output_dir.glob("checkpoint-*")
+            path
+            for path in output_dir.glob("checkpoint-*")
             if path.is_dir() and path.name.removeprefix("checkpoint-").isdigit()
         ),
         key=lambda path: int(path.name.removeprefix("checkpoint-")),
@@ -122,7 +199,9 @@ def _joint_checkpoint_paths(output_dir: Path, setting: str | None) -> list[Path]
     )
 
 
-def load_joint_checkpoint_with_fallback(accelerator, output_dir: Path, setting: str | None) -> Path | None:
+def load_joint_checkpoint_with_fallback(
+    accelerator, output_dir: Path, setting: str | None
+) -> Path | None:
     """Restore an explicit checkpoint or the newest complete checkpoint selected by ``latest``."""
     checkpoints = _joint_checkpoint_paths(output_dir, setting)
     if not checkpoints:
@@ -167,19 +246,41 @@ def _encode_videos(vae, videos: torch.Tensor) -> torch.Tensor:
 
 
 def _bridge_gradient_norm(model) -> torch.Tensor:
-    norms = [parameter.grad.detach().norm() for parameter in model.bridges.parameters() if parameter.grad is not None]
-    return torch.stack(norms).norm() if norms else torch.zeros((), device=next(model.parameters()).device)
+    norms = [
+        parameter.grad.detach().norm()
+        for parameter in model.bridges.parameters()
+        if parameter.grad is not None
+    ]
+    return (
+        torch.stack(norms).norm()
+        if norms
+        else torch.zeros((), device=next(model.parameters()).device)
+    )
 
 
 def pc_gradient_norm(model) -> torch.Tensor:
     """Return the pre-clip global L2 gradient norm for the PhysCtrl model only."""
-    gradients = [parameter.grad.detach().norm() for parameter in model.pc_model.parameters() if parameter.grad is not None]
+    gradients = [
+        parameter.grad.detach().norm()
+        for parameter in model.pc_model.parameters()
+        if parameter.grad is not None
+    ]
     return torch.stack(gradients).norm() if gradients else torch.zeros(())
 
 
 @torch.no_grad()
 def _save_joint_visualization(
-    model, vae, context, clean_latents, point_clouds, linear, angular, output_dir, step, config, device,
+    model,
+    vae,
+    context,
+    clean_latents,
+    point_clouds,
+    linear,
+    angular,
+    output_dir,
+    step,
+    config,
+    device,
     save_artifacts: bool,
 ) -> torch.Tensor:
     from diffusers import DDIMScheduler
@@ -214,12 +315,19 @@ def _save_joint_visualization(
         initial_linear_velocities=linear[0],
         initial_angular_velocities=angular[0],
         num_inference_steps=config["sampling"]["num_inference_steps"],
-        generator=torch.Generator(device=device).manual_seed(config["training"]["seed"]),
+        generator=torch.Generator(device=device).manual_seed(
+            config["training"]["seed"]
+        ),
     )
     if not save_artifacts:
         return sample.video_latent
     sample_dir = Path(output_dir) / "visualizations" / f"step_{step:07d}"
-    save_visualization(vae, sample.video_latent, sample_dir / "video.mp4", config["visualization"]["fps"])
+    save_visualization(
+        vae,
+        sample.video_latent,
+        sample_dir / "video.mp4",
+        config["visualization"]["fps"],
+    )
     predicted = torch.cat((initial.unsqueeze(1), sample.future_point_clouds[0]), dim=1)
     ground_truth = point_clouds[0]
     predicted = predicted.squeeze(2).permute(1, 0, 2, 3).cpu().numpy()
@@ -244,10 +352,14 @@ def main(config: dict | None = None) -> None:
     import yaml
     from diffusers import DDPMScheduler
     from torch.utils.data import DataLoader
-    from transformers import get_constant_schedule_with_warmup, get_cosine_schedule_with_warmup
+    from transformers import (
+        get_constant_schedule_with_warmup,
+        get_cosine_schedule_with_warmup,
+    )
     from training.joint_dataset import JointWanPhysCtrlDataset, joint_collate
     from training.joint_objectives import (
         make_aligned_multi_object_pc_ddpm_batch,
+        per_object_baseline_corrected_deform_loss,
         per_object_pc_x0_mse,
         per_object_rigid_edge_length_loss,
     )
@@ -277,10 +389,17 @@ def main(config: dict | None = None) -> None:
             yaml.safe_dump(config, handle)
     if config["logging"].get("report_to"):
         accelerator.init_trackers(config["logging"]["project"], config=config)
+    enable_deform_loss = config["objective"].get("enable_deform_loss", False)
     dataset = JointWanPhysCtrlDataset(
         config["data"]["dataset_root"],
         expected_size=(config["data"]["width"], config["data"]["height"]),
         expected_points=config["data"]["num_points"],
+        load_deformation_fields=enable_deform_loss,
+        expected_deform_neighbors=(
+            config["objective"].get("deform_loss_neighbors", 32)
+            if enable_deform_loss
+            else None
+        ),
     )
     loader = DataLoader(
         dataset,
@@ -290,8 +409,12 @@ def main(config: dict | None = None) -> None:
         pin_memory=True,
         collate_fn=joint_collate,
     )
-    vae, text_encoder = load_frozen_encoders(config["model"]["checkpoint_dir"], ti2v_5B, accelerator.device)
-    wan_model = load_trainable_dit(config["model"]["checkpoint_dir"], config["model"]["gradient_checkpointing"])
+    vae, text_encoder = load_frozen_encoders(
+        config["model"]["checkpoint_dir"], ti2v_5B, accelerator.device
+    )
+    wan_model = load_trainable_dit(
+        config["model"]["checkpoint_dir"], config["model"]["gradient_checkpointing"]
+    )
     pc_model = PCTrajectoryModel(
         n_points=config["data"]["num_points"],
         n_future_frames=48,
@@ -303,8 +426,10 @@ def main(config: dict | None = None) -> None:
     model = JointWanPhysCtrlModel(wan_model, pc_model)
     optimizer = create_joint_optimizer(model, config["optimizer"])
     lr_scheduler = create_lr_scheduler(
-        config["training"]["lr_scheduler"], optimizer,
-        config["training"]["warmup_steps"], config["training"]["max_train_steps"],
+        config["training"]["lr_scheduler"],
+        optimizer,
+        config["training"]["warmup_steps"],
+        config["training"]["max_train_steps"],
         cosine_factory=get_cosine_schedule_with_warmup,
         constant_factory=get_constant_schedule_with_warmup,
     )
@@ -314,8 +439,12 @@ def main(config: dict | None = None) -> None:
         prediction_type="sample",
         clip_sample=False,
     )
-    model, optimizer, loader, lr_scheduler = accelerator.prepare(model, optimizer, loader, lr_scheduler)
-    generator = torch.Generator(device=accelerator.device).manual_seed(config["training"]["seed"])
+    model, optimizer, loader, lr_scheduler = accelerator.prepare(
+        model, optimizer, loader, lr_scheduler
+    )
+    generator = torch.Generator(device=accelerator.device).manual_seed(
+        config["training"]["seed"]
+    )
     enable_rigid_loss = config["objective"].get("enable_rigid_loss", False)
     global_step = 0
     resume_path = load_joint_checkpoint_with_fallback(
@@ -332,30 +461,63 @@ def main(config: dict | None = None) -> None:
         for batch in loader:
             point_clouds = batch["point_clouds"].to(accelerator.device)
             if point_clouds.shape[1] > config["data"]["max_objects_per_sample"]:
-                raise ValueError("sample exceeds the configured initial object-count curriculum")
+                raise ValueError(
+                    "sample exceeds the configured initial object-count curriculum"
+                )
             videos = batch["video"].to(accelerator.device)
             linear = batch["initial_linear_velocities"].to(accelerator.device)
             angular = batch["initial_angular_velocities"].to(accelerator.device)
+            deform_fields = (
+                {
+                    "deform_f": batch["deform_F"].to(accelerator.device),
+                    "deform_c": batch["deform_C"].to(accelerator.device),
+                    "deform_volume": batch["deform_volume"].to(accelerator.device),
+                    "deform_baseline": batch["deform_baseline"].to(accelerator.device),
+                    "deform_grid_origin": batch["deform_grid_origin"].to(
+                        accelerator.device
+                    ),
+                    "deform_grid_scale": batch["deform_grid_scale"].to(
+                        accelerator.device
+                    ),
+                }
+                if enable_deform_loss
+                else None
+            )
             with accelerator.accumulate(model):
                 clean_latents = _encode_videos(vae, videos)
                 context = text_encoder([""], accelerator.device)
                 flow = make_flow_matching_batch(
-                    clean_latents, generator, config["objective"]["time_shift"], config["objective"]["num_train_timesteps"]
+                    clean_latents,
+                    generator,
+                    config["objective"]["time_shift"],
+                    config["objective"]["num_train_timesteps"],
                 )
-                pc_batch = make_aligned_multi_object_pc_ddpm_batch(point_clouds, noise_scheduler, generator)
+                pc_batch = make_aligned_multi_object_pc_ddpm_batch(
+                    point_clouds, noise_scheduler, generator
+                )
                 video_prediction, pc_prediction = model(
                     video_x=[flow.model_input[0]],
-                    video_t=expand_latent_timesteps(flow.latent_timesteps, clean_latents.shape[-2], clean_latents.shape[-1]),
+                    video_t=expand_latent_timesteps(
+                        flow.latent_timesteps,
+                        clean_latents.shape[-2],
+                        clean_latents.shape[-1],
+                    ),
                     context=context,
-                    seq_len=flow.latent_timesteps.shape[1] * (clean_latents.shape[-2] // 2) * (clean_latents.shape[-1] // 2),
+                    seq_len=flow.latent_timesteps.shape[1]
+                    * (clean_latents.shape[-2] // 2)
+                    * (clean_latents.shape[-1] // 2),
                     noisy_future_state=pc_batch.model_input,
                     frame_times=pc_batch.frame_times,
                     init_pc=point_clouds[:, :, 0],
                     initial_linear_velocity=linear,
                     initial_angular_velocity=angular,
                 )
-                video_loss = masked_velocity_mse(torch.stack(video_prediction), flow.velocity_target, flow.loss_mask)
-                object_losses, pc_loss_sum = per_object_pc_x0_mse(pc_prediction, pc_batch.target)
+                video_loss = masked_velocity_mse(
+                    torch.stack(video_prediction), flow.velocity_target, flow.loss_mask
+                )
+                object_losses, pc_loss_sum = per_object_pc_x0_mse(
+                    pc_prediction, pc_batch.target
+                )
                 rigid_losses = rigid_loss_terms(
                     enable_rigid_loss,
                     point_clouds[:, :, 0],
@@ -364,18 +526,34 @@ def main(config: dict | None = None) -> None:
                     rigid_loss_fn=per_object_rigid_edge_length_loss,
                 )
                 rigid_loss_sum = rigid_losses.sum()
+                deform_losses = deform_loss_terms(
+                    enable_deform_loss,
+                    point_clouds[:, :, 0],
+                    pc_prediction,
+                    **(deform_fields or {}),
+                    deform_loss_fn=per_object_baseline_corrected_deform_loss,
+                )
+                deform_loss_sum = deform_losses.sum()
                 loss = combine_joint_losses(
                     video_loss,
                     object_losses,
                     rigid_loss_sum=rigid_loss_sum,
                     rigid_loss_weight=config["objective"].get("rigid_loss_weight", 0.0),
+                    deform_loss_sum=deform_loss_sum,
+                    deform_loss_weight=config["objective"].get(
+                        "deform_loss_weight", 0.001
+                    ),
                 )
                 accelerator.backward(loss)
-                bridge_grad_norm = _bridge_gradient_norm(accelerator.unwrap_model(model))
+                bridge_grad_norm = _bridge_gradient_norm(
+                    accelerator.unwrap_model(model)
+                )
                 wan_grad_norm = video_gradient_norm(accelerator.unwrap_model(model))
                 pc_grad_norm = pc_gradient_norm(accelerator.unwrap_model(model))
                 if accelerator.sync_gradients:
-                    accelerator.clip_grad_norm_(model.parameters(), config["training"]["max_grad_norm"])
+                    accelerator.clip_grad_norm_(
+                        model.parameters(), config["training"]["max_grad_norm"]
+                    )
                 optimizer.step()
                 lr_scheduler.step()
                 optimizer.zero_grad(set_to_none=True)
@@ -391,32 +569,58 @@ def main(config: dict | None = None) -> None:
                 "train/pc_gradient_norm": pc_grad_norm.detach().item(),
                 "train/learning_rate": lr_scheduler.get_last_lr()[0],
             }
-            metrics.update(per_object_metric_values("train/pc_loss_object", object_losses[0].detach()))
+            metrics.update(
+                per_object_metric_values(
+                    "train/pc_loss_object", object_losses[0].detach()
+                )
+            )
             add_rigid_metrics(metrics, enable_rigid_loss, rigid_losses)
+            add_deform_metrics(metrics, enable_deform_loss, deform_losses)
             accelerator.log(metrics, step=global_step)
             progress_bar.update(1)
-            progress_bar.set_postfix(loss=f"{loss.detach().item():.4f}", lr=f"{lr_scheduler.get_last_lr()[0]:.2e}")
+            progress_bar.set_postfix(
+                loss=f"{loss.detach().item():.4f}",
+                lr=f"{lr_scheduler.get_last_lr()[0]:.2e}",
+            )
             if global_step % config["training"]["checkpoint_every_steps"] == 0:
                 accelerator.save_state(output_dir / f"checkpoint-{global_step}")
                 if accelerator.is_main_process:
-                    prune_joint_checkpoints(output_dir, config["training"]["checkpoints_total_limit"])
+                    prune_joint_checkpoints(
+                        output_dir, config["training"]["checkpoints_total_limit"]
+                    )
             should_log_mse = should_log_denoised_latent_mse(
                 global_step, config["training"]["denoised_latent_mse_every_steps"]
             )
             should_save_visualization = should_save_joint_visualization(
                 global_step, config["visualization"]["every_steps"]
             )
-            if accelerator.is_main_process and (should_log_mse or should_save_visualization):
+            if accelerator.is_main_process and (
+                should_log_mse or should_save_visualization
+            ):
                 unwrapped = accelerator.unwrap_model(model)
                 was_training = unwrapped.training
                 unwrapped.eval()
                 sampled_latent = _save_joint_visualization(
-                    unwrapped, vae, context, clean_latents, point_clouds, linear, angular,
-                    output_dir, global_step, config, accelerator.device, should_save_visualization,
+                    unwrapped,
+                    vae,
+                    context,
+                    clean_latents,
+                    point_clouds,
+                    linear,
+                    angular,
+                    output_dir,
+                    global_step,
+                    config,
+                    accelerator.device,
+                    should_save_visualization,
                 )
                 if should_log_mse:
                     accelerator.log(
-                        {"train/denoised_latent_mse": denoised_latent_mse(sampled_latent, clean_latents[0]).item()},
+                        {
+                            "train/denoised_latent_mse": denoised_latent_mse(
+                                sampled_latent, clean_latents[0]
+                            ).item()
+                        },
                         step=global_step,
                     )
                 if was_training:

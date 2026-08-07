@@ -1,5 +1,5 @@
 data:
-  dataset_root: td_832x480
+  dataset_root: td_832x480_3_soft
   num_frames: 49
   num_points: 2048
   width: 832
@@ -26,6 +26,9 @@ objective:
   enable_rigid_loss: false
   rigid_loss_weight: 0.0
   rigid_loss_neighbors: 16
+  enable_deform_loss: false
+  deform_loss_weight: 0.001
+  deform_loss_neighbors: 32
 optimizer:
   video:
     lr: 1.0e-5
