@@ -37,6 +37,25 @@ Each file must contain `point_cloud` with shape `(49, 1, 2048, 3)` and
 `(1, 3)`. The workflow writes checkpoints below `outputs/pc_trajectory_8layers` and
 predicted-versus-ground-truth MP4 comparisons below that run's `vis/` directory.
 
+## Fixed trajectory-window joint training
+
+Train Wan and the PC branch on the same fixed temporal window from each
+49-frame source clip. Frame `i - 1` conditions both branches and the PC branch
+predicts the next `N` frames. `N` must be a multiple of four; rigid and
+deformation auxiliary losses are intentionally disabled for these experiments.
+
+```bash
+accelerate launch --config_file configs/accelerate/h200_single_gpu.yaml \
+  train_joint_wan_physctrl_trajectory.py \
+  --config configs/train/joint_wan_physctrl_trajectory_832x480.yaml \
+  trajectory.start_frame=5 trajectory.future_frames=24 \
+  logging.output_dir=outputs/joint_trajectory_i5_n24
+```
+
+Start each `(i, N)` experiment fresh from the same seed. Resume only a run
+whose saved configuration uses the same `trajectory.start_frame` and
+`trajectory.future_frames`.
+
 <p align="center">
     <img src="assets/logo.png" width="400"/>
 <p>
