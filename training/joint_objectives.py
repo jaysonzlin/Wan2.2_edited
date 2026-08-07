@@ -26,9 +26,10 @@ def make_aligned_multi_object_pc_ddpm_batch(
     discrete timestep is expanded to all objects from the same video, whereas the Gaussian noise
     remains independently sampled at every element.
     """
-    if point_clouds.ndim != 6 or point_clouds.shape[2] != 49:
-        raise ValueError("point_clouds must have shape [B, K, 49, 1, N, 3]")
+    if point_clouds.ndim != 6 or point_clouds.shape[2] < 2:
+        raise ValueError("point_clouds must have shape [B, K, T, 1, N, 3] with T >= 2")
     batch_size, object_count = point_clouds.shape[:2]
+    frame_count = point_clouds.shape[2]
     future_points = point_clouds[:, :, 1:]
     timesteps = torch.randint(
         0,
@@ -51,7 +52,7 @@ def make_aligned_multi_object_pc_ddpm_batch(
     )
     frame_times = (
         timesteps[:, None, None]
-        .expand(batch_size, object_count, 49)
+        .expand(batch_size, object_count, frame_count)
         .to(point_clouds.dtype)
     )
     return MultiObjectPCDDPMBatch(

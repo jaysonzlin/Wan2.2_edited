@@ -44,6 +44,18 @@ def test_multi_object_ddpm_aligns_timestep_but_uses_independent_noise():
     assert not torch.equal(scheduler.noise[0], scheduler.noise[1])
 
 
+def test_multi_object_ddpm_preserves_a_24_frame_window_length():
+    points = torch.zeros((1, 2, 25, 1, 2, 3))
+
+    batch = make_aligned_multi_object_pc_ddpm_batch(
+        points, RecordingDDPMScheduler(), torch.Generator().manual_seed(1)
+    )
+
+    assert batch.model_input.shape == (1, 2, 24, 1, 2, 3)
+    assert batch.target.shape == (1, 2, 24, 1, 2, 3)
+    assert batch.frame_times.shape == (1, 2, 25)
+
+
 def test_per_object_pc_x0_mse_returns_each_loss_and_their_sum():
     target = torch.zeros((1, 2, 2, 1, 1, 3))
     prediction = target.clone()
