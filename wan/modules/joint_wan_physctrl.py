@@ -201,10 +201,16 @@ class JointWanPhysCtrlModel(nn.Module):
         if len(video_x) != 1 or noisy_future_state.shape[0] != 1:
             raise ValueError("JointWanPhysCtrlModel currently requires train_batch_size=1")
         if noisy_future_state.ndim != 6:
-            raise ValueError("noisy_future_state must have shape [B, K, 48, 1, N, 3]")
+            raise ValueError("noisy_future_state must have shape [B, K, T, 1, N, 3]")
         batch_size, object_count = noisy_future_state.shape[:2]
-        if frame_times.shape[:2] != (batch_size, object_count):
-            raise ValueError("frame_times must have shape [B, K, 49]")
+        if (
+            frame_times.ndim != 3
+            or frame_times.shape[:2] != (batch_size, object_count)
+            or frame_times.shape[2] != noisy_future_state.shape[2] + 1
+        ):
+            raise ValueError(
+                "frame_times must have one more temporal slot than noisy_future_state"
+            )
         hidden, timestep_embedding, modulation, wan_kwargs = self._prepare_wan_states(
             video_x, video_t, context, seq_len, video_condition
         )

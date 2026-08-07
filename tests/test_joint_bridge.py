@@ -88,6 +88,36 @@ class _ZeroAttention(nn.Module):
         return torch.zeros_like(query)
 
 
+def _small_joint_model(n_future_frames: int) -> JointWanPhysCtrlModel:
+    wan = WanModel(
+        model_type="ti2v",
+        patch_size=(1, 2, 2),
+        text_len=2,
+        in_dim=1,
+        dim=64,
+        ffn_dim=128,
+        freq_dim=16,
+        text_dim=4,
+        out_dim=1,
+        num_heads=1,
+        num_layers=8,
+    )
+    for block in wan.blocks:
+        block.self_attn = _ZeroAttention()
+        block.cross_attn = _ZeroAttention()
+    return JointWanPhysCtrlModel(
+        wan,
+        PCTrajectoryModel(
+            n_points=2,
+            n_future_frames=n_future_frames,
+            latent_dim=64,
+            n_layers=8,
+            num_heads=1,
+            objective_type="ddpm",
+        ),
+    )
+
+
 def test_joint_wrapper_supports_multiple_object_trajectories():
     wan = WanModel(
         model_type="ti2v", patch_size=(1, 2, 2), text_len=2, in_dim=1, dim=64,
@@ -115,3 +145,38 @@ def test_joint_wrapper_supports_multiple_object_trajectories():
 
     assert video[0].shape == (1, 1, 2, 2)
     assert trajectories.shape == (1, 3, 48, 1, 2, 3)
+
+
+def test_joint_wrapper_supports_the_pc_model_configured_horizon():
+    model = _small_joint_model(n_future_frames=24)
+
+    _, trajectories = model(
+        video_x=[torch.randn(1, 1, 2, 2)],
+        video_t=torch.tensor([[1.0]]),
+        context=[torch.zeros(2, 4)],
+        seq_len=1,
+        noisy_future_state=torch.randn(1, 1, 24, 1, 2, 3),
+        frame_times=torch.ones(1, 1, 25),
+        init_pc=torch.randn(1, 1, 1, 2, 3),
+        initial_linear_velocity=torch.zeros(1, 1, 1, 3),
+        initial_angular_velocity=torch.zeros(1, 1, 1, 3),
+    )
+
+    assert trajectories.shape == (1, 1, 24, 1, 2, 3)
+
+
+def test_joint_wrapper_rejects_frame_times_that_do_not_match_the_pc_horizon():
+    model = _small_joint_model(n_future_frames=24)
+
+    with pytest.raises(ValueError, match="one more temporal slot"):
+        model(
+            video_x=[torch.randn(1, 1, 2, 2)],
+            video_t=torch.tensor([[1.0]]),
+            context=[torch.zeros(2, 4)],
+            seq_len=1,
+            noisy_future_state=torch.randn(1, 1, 24, 1, 2, 3),
+            frame_times=torch.ones(1, 1, 26),
+            init_pc=torch.randn(1, 1, 1, 2, 3),
+            initial_linear_velocity=torch.zeros(1, 1, 1, 3),
+            initial_angular_velocity=torch.zeros(1, 1, 1, 3),
+        )
