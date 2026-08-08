@@ -6,6 +6,8 @@
 #SBATCH --cpus-per-task=4
 #SBATCH --mem=64G
 #SBATCH --time=10:30:00
+#SBATCH --requeue
+#SBATCH --open-mode=append
 #SBATCH --output=/n/lab_storage/ydu_lab/jaysonzlin/Wan2.2_edited/logs/joint_trajectory_12_37_%j.out
 #SBATCH --error=/n/lab_storage/ydu_lab/jaysonzlin/Wan2.2_edited/logs/joint_trajectory_12_37_%j.err
 
