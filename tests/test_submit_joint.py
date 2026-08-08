@@ -71,3 +71,14 @@ def test_rigid_three_object_joint_launcher_enables_the_configured_rigid_objectiv
         "objective.rigid_loss_neighbors=4",
     ):
         assert expected in script
+
+
+def test_trajectory_launcher_requests_h200_requeue_and_resumes() -> None:
+    script = Path("submit_joint_trajectory_12_37.sh").read_text()
+
+    for expected in (
+        "#SBATCH --partition=gpu_requeue",
+        "#SBATCH --constraint=h200",
+        "training.resume_from_checkpoint=latest",
+    ):
+        assert expected in script

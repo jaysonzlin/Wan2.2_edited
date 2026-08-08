@@ -1,6 +1,7 @@
 #!/bin/bash
 #SBATCH --job-name=joint_trajectory_12_37
-#SBATCH --partition=gpu_h200
+#SBATCH --partition=gpu_requeue
+#SBATCH --constraint=h200
 #SBATCH --gres=gpu:1
 #SBATCH --cpus-per-task=4
 #SBATCH --mem=64G
@@ -32,4 +33,5 @@ exec singularity exec --nv \
     accelerate launch \
         --config_file configs/accelerate/h200_single_gpu.yaml \
         train_joint_wan_physctrl_trajectory.py \
-        --config configs/train/joint_wan_physctrl_trajectory_832x480.yaml
+        --config configs/train/joint_wan_physctrl_trajectory_832x480.yaml \
+        training.resume_from_checkpoint=latest
