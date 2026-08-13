@@ -99,8 +99,8 @@ EOF
         -f https://data.pyg.org/whl/torch-2.5.1+cu126.html
     $ENV_BIN/pip install --no-deps -e /opt/Utonia
 
-    # Build against the Torch 2.5.1 ABI instead of installing a Torch 2.4 wheel.
-    $ENV_BIN/pip install "flash-attn==2.6.3" --no-build-isolation
+    # Keep the precompiled Flash Attention wheel used by the existing container.
+    $ENV_BIN/pip install https://github.com/mjun0812/flash-attention-prebuild-wheels/releases/download/v0.0.8/flash_attn-2.6.3+cu126torch2.4-cp310-cp310-linux_x86_64.whl
 
     # Cleanup
     rm /tmp/requirements.txt
