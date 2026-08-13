@@ -227,10 +227,10 @@ class UtoniaFeatureExtractor:
         if not torch.cuda.is_available():
             raise RuntimeError("CUDA is required to prepare Utonia feature cache")
         try:
-            import utonia
+            from wan import utonia
         except ImportError as error:  # pragma: no cover - depends on local CUDA setup
             raise RuntimeError(
-                "Utonia must be installed before running the Utonia PC experiment"
+                "Vendored Utonia runtime could not be imported for the Utonia PC experiment"
             ) from error
         self._utonia = utonia
         checkpoint_root = Path(cache_root) / "_utonia_checkpoint"

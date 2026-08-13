@@ -1,9 +1,13 @@
+import types
+
 import h5py
 import numpy as np
 import pytest
 import torch
+import wan
 
 from training.utonia_features import (
+    UtoniaFeatureExtractor,
     load_cached_utonia_features,
     prepare_utonia_color,
     prepare_utonia_feature_cache,
@@ -32,6 +36,34 @@ class FakeExtractor:
         assert coordinates.shape == (2048, 3)
         assert rgb.dtype == np.uint8
         return torch.from_numpy(np.concatenate([coordinates, rgb[:, :1]], axis=1))
+
+
+def test_extractor_uses_vendored_utonia(monkeypatch, tmp_path):
+    checkpoint = tmp_path / "_utonia_checkpoint" / "utonia.pth"
+
+    class FakeModel:
+        def cuda(self):
+            return self
+
+        def eval(self):
+            return self
+
+    def load(*_args, **kwargs):
+        checkpoint.parent.mkdir(parents=True)
+        checkpoint.write_bytes(b"weights")
+        assert kwargs["repo_id"] == "Pointcept/Utonia"
+        return FakeModel()
+
+    fake_utonia = types.SimpleNamespace(
+        model=types.SimpleNamespace(load=load),
+        transform=types.SimpleNamespace(default=lambda **_kwargs: object()),
+    )
+    monkeypatch.setattr(torch.cuda, "is_available", lambda: True)
+    monkeypatch.setattr(wan, "utonia", fake_utonia, raising=False)
+
+    extractor = UtoniaFeatureExtractor(tmp_path)
+
+    assert extractor.model.__class__ is FakeModel
 
 
 @pytest.mark.parametrize(
