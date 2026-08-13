@@ -6,6 +6,8 @@ import h5py
 import torch
 from torch.utils.data import Dataset
 
+from training.utonia_features import load_cached_utonia_features
+
 
 class PCTrajectoryDataset(Dataset):
     """Load PhysCtrl-format ``sample_*/pc.hdf5`` point-cloud trajectories."""
@@ -17,11 +19,17 @@ class PCTrajectoryDataset(Dataset):
         expected_points: int = 2048,
         *,
         object_id: str | None = None,
+        utonia_cache_root: str | Path | None = None,
     ):
         self.dataset_root = Path(dataset_root)
         self.expected_frames = expected_frames
         self.expected_points = expected_points
         self.object_id = object_id
+        self.utonia_cache_root = (
+            Path(utonia_cache_root) if utonia_cache_root is not None else None
+        )
+        if self.utonia_cache_root is not None and object_id is None:
+            raise ValueError("utonia_cache_root requires object_id")
         if not self.dataset_root.is_dir():
             raise ValueError(f"Dataset root does not exist: {self.dataset_root}")
         sample_directories = sorted(
@@ -48,13 +56,18 @@ class PCTrajectoryDataset(Dataset):
             point_cloud = torch.from_numpy(source["point_cloud"][:]).float()
             linear_velocity = torch.from_numpy(source["initial_linear_velocity"][:]).float()
             angular_velocity = torch.from_numpy(source["initial_angular_velocity"][:]).float()
-        return {
+        sample = {
             "points_src": point_cloud[0],
             "points_tgt": point_cloud[1:],
             "initial_linear_velocity": linear_velocity,
             "initial_angular_velocity": angular_velocity,
             "sample_id": self._sample_id(path),
         }
+        if self.utonia_cache_root is not None:
+            sample["utonia_features"] = load_cached_utonia_features(
+                self.utonia_cache_root, sample["sample_id"]
+            )
+        return sample
 
     def _sample_id(self, path: Path) -> str:
         if self.object_id is None:

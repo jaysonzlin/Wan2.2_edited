@@ -1,8 +1,10 @@
 import h5py
 import numpy as np
 import pytest
+import torch
 
 from training.pc_dataset import PCTrajectoryDataset
+from training.utonia_features import prepare_utonia_feature_cache
 
 
 def write_pc_sample(path, shape=(49, 1, 2048, 3), rgb=None):
@@ -68,3 +70,27 @@ def test_object_dataset_rejects_invalid_rgb(tmp_path, rgb):
 
     with pytest.raises((KeyError, ValueError), match="rgb"):
         PCTrajectoryDataset(tmp_path, object_id="000")
+
+
+def test_object_dataset_loads_prepared_utonia_features(tmp_path):
+    source_path = tmp_path / "sample_0" / "objects" / "000" / "pc.hdf5"
+    write_pc_sample(source_path.parent, rgb=np.zeros((2048, 3), dtype=np.uint8))
+
+    class FakeExtractor:
+        checkpoint_fingerprint = "checkpoint"
+        preprocess_version = "preprocess"
+
+        def __call__(self, coordinates, rgb):
+            return torch.ones((2048, 5))
+
+    cache_root = tmp_path / "utonia_cache"
+    prepare_utonia_feature_cache(
+        {"sample_0/objects/000": source_path}, cache_root, FakeExtractor()
+    )
+
+    sample = PCTrajectoryDataset(
+        tmp_path, object_id="000", utonia_cache_root=cache_root
+    )[0]
+
+    assert sample["utonia_features"].shape == (2048, 5)
+    assert sample["utonia_features"].dtype == torch.float32
