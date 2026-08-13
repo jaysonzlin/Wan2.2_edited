@@ -23,7 +23,8 @@ def test_utonia_launcher_uses_a100_requeue_and_latest_resume():
     assert "--config_file configs/accelerate/h200_single_gpu.yaml" in script
     assert "train_pc.py" in script
     assert "--config configs/train/config_pc_utonia_overfit.yaml" in script
-    assert "max_train_steps=10000" in script
+    assert "num_train_epochs=10000" in script
+    assert "max_train_steps=10000" not in script
     assert "checkpoints_total_limit=2" in script
     assert "resume_from_checkpoint=latest" in script
     assert "training.resume_from_checkpoint=latest" not in script

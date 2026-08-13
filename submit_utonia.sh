@@ -36,6 +36,6 @@ exec singularity exec --nv \
         --config_file configs/accelerate/h200_single_gpu.yaml \
         train_pc.py \
         --config configs/train/config_pc_utonia_overfit.yaml \
-        max_train_steps=10000 \
+        num_train_epochs=10000 \
         checkpoints_total_limit=2 \
         resume_from_checkpoint=latest
