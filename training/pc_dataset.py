@@ -3,10 +3,11 @@
 from pathlib import Path
 
 import h5py
+import numpy as np
 import torch
 from torch.utils.data import Dataset
 
-from training.utonia_features import load_cached_utonia_features
+from training.utonia_features import load_cached_utonia_features, validate_utonia_rgb
 
 
 class PCTrajectoryDataset(Dataset):
@@ -93,10 +94,9 @@ class PCTrajectoryDataset(Dataset):
                 if "rgb" not in source:
                     raise KeyError(f"{path}: missing required dataset rgb")
                 rgb = source["rgb"]
-                expected_rgb = (self.expected_points, 3)
-                if rgb.shape != expected_rgb:
-                    raise ValueError(f"{path}: rgb must have shape {expected_rgb}")
-                if rgb.dtype != "uint8":
-                    raise ValueError(f"{path}: rgb must have dtype uint8")
-                if rgb[:].min() < 0 or rgb[:].max() > 255:
-                    raise ValueError(f"{path}: rgb values must be in [0, 255]")
+                try:
+                    validate_utonia_rgb(
+                        np.asarray(rgb[:]), point_count=self.expected_points
+                    )
+                except ValueError as error:
+                    raise ValueError(f"{path}: {error}") from error

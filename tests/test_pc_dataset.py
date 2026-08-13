@@ -50,6 +50,15 @@ def test_object_dataset_selects_requested_object_and_requires_rgb(tmp_path):
     assert sample["points_src"].shape == (1, 2048, 3)
 
 
+def test_object_dataset_accepts_kubric_unit_float_rgb(tmp_path):
+    rgb = np.full((2048, 3), 0.5, dtype=np.float32)
+    write_pc_sample(tmp_path / "sample_0" / "objects" / "000", rgb=rgb)
+
+    sample = PCTrajectoryDataset(tmp_path, object_id="000")[0]
+
+    assert sample["points_src"].shape == (1, 2048, 3)
+
+
 def test_object_dataset_rejects_missing_requested_object(tmp_path):
     write_pc_sample(tmp_path / "sample_0" / "objects" / "001", rgb=np.zeros((2048, 3), dtype=np.uint8))
 
@@ -61,7 +70,7 @@ def test_object_dataset_rejects_missing_requested_object(tmp_path):
     "rgb",
     [
         None,
-        np.zeros((2048, 3), dtype=np.float32),
+        np.full((2048, 3), 1.1, dtype=np.float32),
         np.zeros((2048, 2), dtype=np.uint8),
     ],
 )
