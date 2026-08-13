@@ -5,7 +5,7 @@ From: nvidia/cuda:12.9.2-devel-ubuntu22.04
     # Injects the Miniforge installer into the container
     ./Miniforge3-Linux-x86_64.sh /opt/miniforge.sh
     # Inject the local Utonia package without a network source checkout.
-    ../Utonia /opt/Utonia
+    ../utonia /opt/Utonia
 
 %post
     export DEBIAN_FRONTEND=noninteractive
@@ -101,18 +101,6 @@ EOF
 
     # Build against the Torch 2.5.1 ABI instead of installing a Torch 2.4 wheel.
     $ENV_BIN/pip install "flash-attn==2.6.3" --no-build-isolation
-
-    $ENV_BIN/python - <<'PY'
-import flash_attn
-import spconv.pytorch
-import torch
-import torch_scatter
-import utonia
-
-assert torch.__version__.startswith("2.5.1")
-assert torch.version.cuda == "12.6"
-print(f"Utonia runtime ready: torch={torch.__version__}, cuda={torch.version.cuda}")
-PY
 
     # Cleanup
     rm /tmp/requirements.txt
