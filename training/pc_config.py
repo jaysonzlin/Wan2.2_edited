@@ -58,6 +58,16 @@ def validate_pc_config(config: dict) -> None:
         raise ValueError(
             "model.transformer_block must be 'SpatialTemporalTransformerBlock'"
         )
+    utonia_enabled = model.get("utonia_enabled")
+    if utonia_enabled is not None and not isinstance(utonia_enabled, bool):
+        raise ValueError("model.utonia_enabled must be a boolean")
+    if utonia_enabled:
+        if not isinstance(data.get("object_id"), str) or not data["object_id"].strip():
+            raise ValueError("data.object_id must be a non-empty string when Utonia is enabled")
+        if not isinstance(data.get("utonia_cache_root"), str) or not data["utonia_cache_root"].strip():
+            raise ValueError(
+                "data.utonia_cache_root must be a non-empty string when Utonia is enabled"
+            )
     if objective.get("type") not in {"flow", "ddpm"}:
         raise ValueError("objective.type must be 'flow' or 'ddpm'")
     if not isinstance(objective.get("num_train_timesteps"), int) or objective["num_train_timesteps"] <= 0:

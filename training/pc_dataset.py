@@ -10,17 +10,34 @@ from torch.utils.data import Dataset
 class PCTrajectoryDataset(Dataset):
     """Load PhysCtrl-format ``sample_*/pc.hdf5`` point-cloud trajectories."""
 
-    def __init__(self, dataset_root: str | Path, expected_frames: int = 49, expected_points: int = 2048):
+    def __init__(
+        self,
+        dataset_root: str | Path,
+        expected_frames: int = 49,
+        expected_points: int = 2048,
+        *,
+        object_id: str | None = None,
+    ):
         self.dataset_root = Path(dataset_root)
         self.expected_frames = expected_frames
         self.expected_points = expected_points
+        self.object_id = object_id
         if not self.dataset_root.is_dir():
             raise ValueError(f"Dataset root does not exist: {self.dataset_root}")
-        self.samples = sorted(path / "pc.hdf5" for path in self.dataset_root.glob("sample_*") if path.is_dir())
+        sample_directories = sorted(
+            path for path in self.dataset_root.glob("sample_*") if path.is_dir()
+        )
+        if object_id is None:
+            self.samples = [path / "pc.hdf5" for path in sample_directories]
+        else:
+            self.samples = [
+                path / "objects" / object_id / "pc.hdf5"
+                for path in sample_directories
+            ]
         if not self.samples:
             raise ValueError(f"No sample_* directories found in {self.dataset_root}")
         for path in self.samples:
-            self._validate(path)
+            self._validate(path, require_rgb=object_id is not None)
 
     def __len__(self) -> int:
         return len(self.samples)
@@ -36,10 +53,15 @@ class PCTrajectoryDataset(Dataset):
             "points_tgt": point_cloud[1:],
             "initial_linear_velocity": linear_velocity,
             "initial_angular_velocity": angular_velocity,
-            "sample_id": path.parent.name,
+            "sample_id": self._sample_id(path),
         }
 
-    def _validate(self, path: Path) -> None:
+    def _sample_id(self, path: Path) -> str:
+        if self.object_id is None:
+            return path.parent.name
+        return f"{path.parent.parent.parent.name}/objects/{self.object_id}"
+
+    def _validate(self, path: Path, *, require_rgb: bool) -> None:
         if not path.is_file():
             raise ValueError(f"{path.parent}: missing required file pc.hdf5")
         with h5py.File(path, "r") as source:
@@ -53,3 +75,14 @@ class PCTrajectoryDataset(Dataset):
             for key in ("initial_linear_velocity", "initial_angular_velocity"):
                 if source[key].shape != (1, 3):
                     raise ValueError(f"{path}: {key} must have shape (1, 3)")
+            if require_rgb:
+                if "rgb" not in source:
+                    raise KeyError(f"{path}: missing required dataset rgb")
+                rgb = source["rgb"]
+                expected_rgb = (self.expected_points, 3)
+                if rgb.shape != expected_rgb:
+                    raise ValueError(f"{path}: rgb must have shape {expected_rgb}")
+                if rgb.dtype != "uint8":
+                    raise ValueError(f"{path}: rgb must have dtype uint8")
+                if rgb[:].min() < 0 or rgb[:].max() > 255:
+                    raise ValueError(f"{path}: rgb values must be in [0, 255]")

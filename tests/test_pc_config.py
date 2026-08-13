@@ -33,6 +33,45 @@ def test_pc_config_accepts_the_fixed_contract(tmp_path):
     assert load_pc_config(path, [])['objective']['type'] == "ddpm"
 
 
+def test_pc_config_accepts_baseline_without_utonia_fields(tmp_path):
+    path = tmp_path / "config.yaml"
+    path.write_text(valid_config_text())
+
+    config = load_pc_config(path, [])
+
+    assert config["model"].get("utonia_enabled") is None
+
+
+@pytest.mark.parametrize(
+    ("data_addition", "message"),
+    [
+        ("", "data.object_id"),
+        (
+            "  object_id: '000'\n",
+            "data.utonia_cache_root",
+        ),
+    ],
+)
+def test_utonia_config_requires_object_id_and_cache_root(tmp_path, data_addition, message):
+    path = tmp_path / "config.yaml"
+    path.write_text(
+        valid_config_text().replace(
+            "model:\n", f"{data_addition}model:\n  utonia_enabled: true\n"
+        )
+    )
+
+    with pytest.raises(ValueError, match=message):
+        load_pc_config(path, [])
+
+
+def test_utonia_config_rejects_non_boolean_enabled_flag(tmp_path):
+    path = tmp_path / "config.yaml"
+    path.write_text(valid_config_text().replace("objective:\n", "  utonia_enabled: enabled\nobjective:\n"))
+
+    with pytest.raises(ValueError, match="model.utonia_enabled must be a boolean"):
+        load_pc_config(path, [])
+
+
 def test_pc_config_rejects_wrong_frame_count(tmp_path):
     path = tmp_path / "config.yaml"
     path.write_text(valid_config_text().replace("num_frames: 49", "num_frames: 48"))
