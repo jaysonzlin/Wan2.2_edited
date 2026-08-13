@@ -22,7 +22,7 @@ checkpointing_steps: 250
 resume_from_checkpoint: null
 condition_drop_rate: 0.0
 data:
-  dataset_root: training_dataset
+  dataset_root: td_832x480_3_soft
   num_frames: 49
   num_points: 2048
   object_id: "000"
