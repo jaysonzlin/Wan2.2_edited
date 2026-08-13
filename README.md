@@ -40,8 +40,8 @@ predicted-versus-ground-truth MP4 comparisons below that run's `vis/` directory.
 ### Utonia-conditioned object overfit
 
 To overfit object `000` with frozen Utonia dense features from frame-zero XYZ
-and required `rgb: uint8 (2048, 3)`, install the sibling Utonia package and its
-CUDA dependencies in the training environment, then run:
+and required `rgb: uint8 (2048, 3)`, use the vendored Utonia inference runtime
+and its CUDA dependencies in the training environment, then run:
 
 ```bash
 accelerate launch --config_file configs/accelerate/h200_single_gpu.yaml \

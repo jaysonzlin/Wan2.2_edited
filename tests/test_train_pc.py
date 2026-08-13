@@ -69,6 +69,8 @@ def test_readme_documents_utonia_pc_overfit_entrypoint():
     readme = Path("README.md").read_text()
 
     assert "train_pc.py --config configs/train/config_pc_utonia_overfit.yaml" in readme
+    assert "vendored Utonia inference runtime" in readme
+    assert "install the sibling Utonia package" not in readme
 
 
 def test_utonia_config_is_loadable():
