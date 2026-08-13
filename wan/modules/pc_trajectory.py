@@ -47,6 +47,7 @@ class PCTrajectoryModel(nn.Module):
         num_heads: int = 4,
         point_embed: bool = True,
         objective_type: str = "flow",
+        utonia_feature_dim: int | None = None,
     ):
         super().__init__()
         if objective_type not in {"flow", "ddpm"}:
@@ -57,12 +58,20 @@ class PCTrajectoryModel(nn.Module):
             raise ValueError("num_heads must equal latent_dim // 64")
         if not point_embed:
             raise ValueError("point_embed must be true")
+        if utonia_feature_dim is not None and utonia_feature_dim <= 0:
+            raise ValueError("utonia_feature_dim must be positive")
 
         self.objective_type = objective_type
         self.n_points = n_points
         self.n_future_frames = n_future_frames
         self.latent_dim = latent_dim
+        self.utonia_feature_dim = utonia_feature_dim
         self.input_encoder = PointEmbed(latent_dim)
+        if utonia_feature_dim is not None:
+            self.utonia_feature_norm = nn.LayerNorm(utonia_feature_dim)
+            self.utonia_feature_projection = nn.Linear(
+                latent_dim + utonia_feature_dim, latent_dim
+            )
         self.linear_velocity_encoder = nn.Linear(3, latent_dim)
         self.angular_velocity_encoder = nn.Linear(3, latent_dim)
         self.time_embedding = PhysCtrlTimestepEmbedding(latent_dim)
@@ -84,6 +93,7 @@ class PCTrajectoryModel(nn.Module):
         init_pc: torch.Tensor,
         initial_linear_velocity: torch.Tensor,
         initial_angular_velocity: torch.Tensor,
+        utonia_features: torch.Tensor | None = None,
     ) -> torch.Tensor:
         points, controls, temb = self.encode_states(
             noisy_future_state,
@@ -91,6 +101,7 @@ class PCTrajectoryModel(nn.Module):
             init_pc,
             initial_linear_velocity,
             initial_angular_velocity,
+            utonia_features,
         )
         for block in self.blocks:
             points, controls = block(points, controls, temb)
@@ -103,6 +114,7 @@ class PCTrajectoryModel(nn.Module):
         init_pc: torch.Tensor,
         initial_linear_velocity: torch.Tensor,
         initial_angular_velocity: torch.Tensor,
+        utonia_features: torch.Tensor | None = None,
     ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         """Encode a trajectory into point/control states for externally interleaved blocks."""
         batch = noisy_future_state.shape[0]
@@ -122,6 +134,17 @@ class PCTrajectoryModel(nn.Module):
             or initial_angular_velocity.shape != (batch, 1, 3)
         ):
             raise ValueError("initial velocities must have shape (B, 1, 3)")
+        if self.utonia_feature_dim is not None:
+            if utonia_features is None:
+                raise ValueError("utonia_features must be provided when fusion is configured")
+            if utonia_features.ndim != 3:
+                raise ValueError("utonia_features must have shape (B, N, D)")
+            if utonia_features.shape[0] != batch:
+                raise ValueError("utonia_features batch size must match trajectory input")
+            if utonia_features.shape[1] != self.n_points:
+                raise ValueError("utonia_features point count must match trajectory input")
+            if utonia_features.shape[2] != self.utonia_feature_dim:
+                raise ValueError("utonia_features feature width must match configured fusion")
 
         future_positions = (
             init_pc.unsqueeze(1) + noisy_future_state
@@ -136,6 +159,17 @@ class PCTrajectoryModel(nn.Module):
             self.n_points,
             self.latent_dim,
         )
+        if self.utonia_feature_dim is not None:
+            assert utonia_features is not None
+            feature_tokens = self.utonia_feature_norm(
+                utonia_features.to(device=points.device, dtype=points.dtype)
+            )
+            feature_tokens = feature_tokens[:, None].expand(
+                -1, self.n_future_frames + 1, -1, -1
+            )
+            points = self.utonia_feature_projection(
+                torch.cat((points, feature_tokens), dim=-1)
+            )
         point_positions = self.position_embedding[:, 2:].to(
             device=points.device, dtype=points.dtype
         )

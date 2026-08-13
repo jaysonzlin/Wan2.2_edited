@@ -4,7 +4,7 @@ import torch
 from wan.modules.pc_trajectory import PCTrajectoryModel
 
 
-def make_tiny_model(objective_type="flow"):
+def make_tiny_model(objective_type="flow", utonia_feature_dim=None):
     return PCTrajectoryModel(
         n_points=8,
         n_future_frames=48,
@@ -13,6 +13,7 @@ def make_tiny_model(objective_type="flow"):
         num_heads=1,
         point_embed=True,
         objective_type=objective_type,
+        utonia_feature_dim=utonia_feature_dim,
     )
 
 
@@ -172,4 +173,50 @@ def test_model_rejects_non_physctrl_head_width_or_point_encoder():
             n_layers=1,
             num_heads=1,
             point_embed=False,
+        )
+
+
+def test_model_fuses_per_point_utonia_features_across_all_frames():
+    model = make_tiny_model(utonia_feature_dim=5)
+    captured = {}
+    handle = model.utonia_feature_projection.register_forward_pre_hook(
+        lambda _module, inputs: captured.setdefault("tokens", inputs[0].detach().clone())
+    )
+    features = torch.randn(2, 8, 5)
+    try:
+        output = model(
+            torch.randn(2, 48, 1, 8, 3),
+            torch.tensor([[0.0] + [500.0] * 48] * 2),
+            torch.randn(2, 1, 8, 3),
+            torch.randn(2, 1, 3),
+            torch.randn(2, 1, 3),
+            utonia_features=features,
+        )
+    finally:
+        handle.remove()
+
+    assert output.shape == (2, 48, 1, 8, 3)
+    assert captured["tokens"].shape == (2, 49, 8, 69)
+
+
+@pytest.mark.parametrize(
+    "features, message",
+    [
+        (None, "utonia_features must be provided"),
+        (torch.zeros(1, 8, 5), "batch size"),
+        (torch.zeros(2, 7, 5), "point count"),
+        (torch.zeros(2, 8, 4), "feature width"),
+    ],
+)
+def test_model_rejects_invalid_utonia_features(features, message):
+    model = make_tiny_model(utonia_feature_dim=5)
+
+    with pytest.raises(ValueError, match=message):
+        model(
+            torch.zeros(2, 48, 1, 8, 3),
+            torch.tensor([[0.0] + [500.0] * 48] * 2),
+            torch.zeros(2, 1, 8, 3),
+            torch.zeros(2, 1, 3),
+            torch.zeros(2, 1, 3),
+            utonia_features=features,
         )
