@@ -1,0 +1,48 @@
+output_dir: ./outputs/pc_trajectory_utonia_overfit
+logging_dir: logs
+vis_dir: vis
+report_to: wandb
+tracker_project_name: pc_trajectory_utonia_overfit
+seed: 0
+train_batch_size: 1
+num_train_epochs: 1000
+max_train_steps: 60000
+gradient_accumulation_steps: 1
+learning_rate: 1.0e-4
+lr_scheduler: constant
+lr_warmup_steps: 100
+adam_beta1: 0.9
+adam_beta2: 0.999
+adam_weight_decay: 1.0e-2
+adam_epsilon: 1.0e-8
+max_grad_norm: 1.0
+mixed_precision: bf16
+dataloader_num_workers: 8
+checkpointing_steps: 250
+resume_from_checkpoint: null
+condition_drop_rate: 0.0
+data:
+  dataset_root: training_dataset
+  num_frames: 49
+  num_points: 2048
+  object_id: "000"
+  utonia_cache_root: ./outputs/utonia_feature_cache
+model:
+  n_layers: 8
+  latent_dim: 256
+  num_heads: 4
+  point_embed: true
+  frame_cond: true
+  transformer_block: SpatialTemporalTransformerBlock
+  utonia_enabled: true
+objective:
+  type: ddpm
+  num_train_timesteps: 1000
+  beta_schedule: linear
+  time_shift: 5.0
+sampling:
+  num_inference_steps: 50
+  solver_order: 3
+visualization:
+  every_epochs: 100
+  fps: 12

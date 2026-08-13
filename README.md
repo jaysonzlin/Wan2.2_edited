@@ -37,6 +37,22 @@ Each file must contain `point_cloud` with shape `(49, 1, 2048, 3)` and
 `(1, 3)`. The workflow writes checkpoints below `outputs/pc_trajectory_8layers` and
 predicted-versus-ground-truth MP4 comparisons below that run's `vis/` directory.
 
+### Utonia-conditioned object overfit
+
+To overfit object `000` with frozen Utonia dense features from frame-zero XYZ
+and required `rgb: uint8 (2048, 3)`, install the sibling Utonia package and its
+CUDA dependencies in the training environment, then run:
+
+```bash
+accelerate launch --config_file configs/accelerate/h200_single_gpu.yaml \
+  train_pc.py --config configs/train/config_pc_utonia_overfit.yaml
+```
+
+The first run downloads the official `Pointcept/Utonia` weights through Utonia's
+Hugging Face loader and writes feature records beneath the separate
+`outputs/utonia_feature_cache` root. Later runs validate and reuse matching
+records; they never modify the source `pc.hdf5` files.
+
 ## Fixed trajectory-window joint training
 
 Train Wan and the PC branch on the same fixed temporal window from each

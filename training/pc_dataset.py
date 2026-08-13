@@ -46,6 +46,7 @@ class PCTrajectoryDataset(Dataset):
             raise ValueError(f"No sample_* directories found in {self.dataset_root}")
         for path in self.samples:
             self._validate(path, require_rgb=object_id is not None)
+        self.source_paths = {self._sample_id(path): path for path in self.samples}
 
     def __len__(self) -> int:
         return len(self.samples)

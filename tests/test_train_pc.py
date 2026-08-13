@@ -2,7 +2,10 @@ import subprocess
 import sys
 from pathlib import Path
 
+import pytest
+
 from train_pc import (
+    build_pc_training_dataset,
     create_progress_bar,
     create_pc_noise_scheduler,
     initialize_trackers,
@@ -60,6 +63,92 @@ def test_readme_documents_pc_flow_entrypoint():
 
     assert "train_pc.py --config configs/train/config_pc.yaml" in readme
     assert "pc.hdf5" in readme
+
+
+def test_readme_documents_utonia_pc_overfit_entrypoint():
+    readme = Path("README.md").read_text()
+
+    assert "train_pc.py --config configs/train/config_pc_utonia_overfit.yaml" in readme
+
+
+def test_utonia_config_is_loadable():
+    from training.pc_config import load_pc_config
+
+    config = load_pc_config("configs/train/config_pc_utonia_overfit.yaml", [])
+
+    assert config["model"]["utonia_enabled"] is True
+    assert config["data"]["object_id"] == "000"
+
+
+def test_build_pc_training_dataset_prepares_cache_before_cache_backed_dataset():
+    calls = []
+
+    class Dataset:
+        source_paths = {"sample_0/objects/000": Path("input/pc.hdf5")}
+
+    def dataset_factory(*args, **kwargs):
+        calls.append(("dataset", args, kwargs))
+        return Dataset()
+
+    def extractor_factory(cache_root):
+        calls.append(("extractor", cache_root))
+        return "extractor"
+
+    def cache_preparer(sources, cache_root, extractor):
+        calls.append(("prepare", sources, cache_root, extractor))
+        return 17
+
+    config = {
+        "data": {
+            "dataset_root": "input",
+            "object_id": "000",
+            "utonia_cache_root": "utonia-cache",
+        },
+        "model": {"utonia_enabled": True},
+    }
+
+    dataset, feature_dim = build_pc_training_dataset(
+        config,
+        dataset_factory=dataset_factory,
+        extractor_factory=extractor_factory,
+        cache_preparer=cache_preparer,
+    )
+
+    assert isinstance(dataset, Dataset)
+    assert feature_dim == 17
+    assert calls == [
+        ("dataset", ("input",), {"object_id": "000"}),
+        ("extractor", "utonia-cache"),
+        (
+            "prepare",
+            {"sample_0/objects/000": Path("input/pc.hdf5")},
+            "utonia-cache",
+            "extractor",
+        ),
+        (
+            "dataset",
+            ("input",),
+            {"object_id": "000", "utonia_cache_root": "utonia-cache"},
+        ),
+    ]
+
+
+def test_build_pc_training_dataset_keeps_baseline_path_cache_free():
+    calls = []
+
+    def dataset_factory(*args, **kwargs):
+        calls.append((args, kwargs))
+        return "baseline"
+
+    dataset, feature_dim = build_pc_training_dataset(
+        {"data": {"dataset_root": "input"}, "model": {}},
+        dataset_factory=dataset_factory,
+        extractor_factory=lambda _root: pytest.fail("extractor should not be built"),
+        cache_preparer=lambda *_args: pytest.fail("cache should not be prepared"),
+    )
+
+    assert (dataset, feature_dim) == ("baseline", None)
+    assert calls == [(("input",), {})]
 
 
 def test_ddpm_objective_creates_sample_prediction_scheduler():

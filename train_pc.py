@@ -57,6 +57,34 @@ def create_pc_noise_scheduler(objective: dict):
     )
 
 
+def build_pc_training_dataset(
+    config: dict,
+    *,
+    dataset_factory,
+    extractor_factory,
+    cache_preparer,
+):
+    """Create the baseline dataset or precompute the Utonia-backed variant."""
+    data = config["data"]
+    if not config["model"].get("utonia_enabled", False):
+        return dataset_factory(data["dataset_root"]), None
+
+    object_id = data["object_id"]
+    cache_root = data["utonia_cache_root"]
+    source_dataset = dataset_factory(data["dataset_root"], object_id=object_id)
+    extractor = extractor_factory(cache_root)
+    try:
+        feature_dim = cache_preparer(source_dataset.source_paths, cache_root, extractor)
+    finally:
+        del extractor
+    dataset = dataset_factory(
+        data["dataset_root"],
+        object_id=object_id,
+        utonia_cache_root=cache_root,
+    )
+    return dataset, feature_dim
+
+
 def main(config=None) -> None:
     if config is None:
         args = parse_args()
@@ -73,6 +101,10 @@ def main(config=None) -> None:
     from training.pc_objectives import make_pc_flow_batch, mse_loss
     from training.schedules import create_lr_scheduler
     from training.pc_visualization import save_pointcloud_comparison_mp4
+    from training.utonia_features import (
+        UtoniaFeatureExtractor,
+        prepare_utonia_feature_cache,
+    )
     from wan.modules.pc_trajectory import PCTrajectoryModel
     from wan.pc_pipeline import PCDDIMPipeline, PCFlowPipeline
     from wan.utils.fm_solvers_unipc import FlowUniPCMultistepScheduler
@@ -88,11 +120,16 @@ def main(config=None) -> None:
     )
     initialize_trackers(accelerator, config)
     set_seed(config["seed"])
-    dataset = PCTrajectoryDataset(config["data"]["dataset_root"])
+    dataset, utonia_feature_dim = build_pc_training_dataset(
+        config,
+        dataset_factory=PCTrajectoryDataset,
+        extractor_factory=UtoniaFeatureExtractor,
+        cache_preparer=prepare_utonia_feature_cache,
+    )
     loader = DataLoader(dataset, batch_size=config["train_batch_size"], shuffle=True, num_workers=config["dataloader_num_workers"])
     model_config = config["model"]
     objective = config["objective"]
-    model = PCTrajectoryModel(n_points=config["data"]["num_points"], n_future_frames=48, latent_dim=model_config["latent_dim"], n_layers=model_config["n_layers"], num_heads=model_config["num_heads"], point_embed=model_config["point_embed"], objective_type=objective["type"])
+    model = PCTrajectoryModel(n_points=config["data"]["num_points"], n_future_frames=48, latent_dim=model_config["latent_dim"], n_layers=model_config["n_layers"], num_heads=model_config["num_heads"], point_embed=model_config["point_embed"], objective_type=objective["type"], utonia_feature_dim=utonia_feature_dim)
     noise_scheduler = create_pc_noise_scheduler(objective)
     optimizer = torch.optim.AdamW(model.parameters(), lr=config["learning_rate"], betas=(config["adam_beta1"], config["adam_beta2"]), weight_decay=config["adam_weight_decay"], eps=config["adam_epsilon"])
     scheduler = create_lr_scheduler(
@@ -128,7 +165,10 @@ def main(config=None) -> None:
                 else:
                     target_batch = make_pc_ddpm_batch(batch["points_tgt"].to(accelerator.device), noise_scheduler, generator)
                     target = target_batch.target
-                prediction = model(target_batch.model_input, target_batch.frame_times, source, batch["initial_linear_velocity"].to(accelerator.device), batch["initial_angular_velocity"].to(accelerator.device))
+                utonia_features = batch.get("utonia_features")
+                if utonia_features is not None:
+                    utonia_features = utonia_features.to(accelerator.device)
+                prediction = model(target_batch.model_input, target_batch.frame_times, source, batch["initial_linear_velocity"].to(accelerator.device), batch["initial_angular_velocity"].to(accelerator.device), utonia_features=utonia_features)
                 loss = mse_loss(prediction, target)
                 accelerator.backward(loss)
                 if accelerator.sync_gradients:
@@ -168,6 +208,7 @@ def main(config=None) -> None:
                 accelerator.device,
                 config["sampling"]["num_inference_steps"],
                 torch.Generator(device=accelerator.device).manual_seed(config["seed"]),
+                utonia_features=visualization_batch.get("utonia_features"),
             )
             predicted = torch.cat(
                 (visualization_batch["points_src"].unsqueeze(1).to(accelerator.device), predicted_future), dim=1
