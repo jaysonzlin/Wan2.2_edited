@@ -2,15 +2,15 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Add a requeueable H200 Slurm launcher for the Utonia-conditioned point-cloud overfit experiment.
+**Goal:** Add a requeueable A100 Slurm launcher for the Utonia-conditioned point-cloud overfit experiment.
 
-**Architecture:** `submit_utonia.sh` mirrors the established joint-trajectory Slurm script so it inherits the same project path, Singularity image, bind mounts, diagnostics, and requeue behavior. It switches only the job/log identity and Accelerate command to Utonia point-cloud training, with automatic latest-checkpoint resume.
+**Architecture:** `submit_utonia.sh` mirrors the established joint-trajectory Slurm script so it inherits the same project path, Singularity image, bind mounts, diagnostics, and requeue behavior. It switches the GPU constraint, job/log identity, and Accelerate command to Utonia point-cloud training, with automatic latest-checkpoint resume.
 
 **Tech Stack:** Slurm, Singularity, Accelerate, Bash, pytest.
 
 ## Global Constraints
 
-- Use `gpu_requeue`, `--constraint=h200`, one GPU, four CPUs, 64 GB memory, a 10:30:00 wall time, `--requeue`, and `--open-mode=append`.
+- Use `gpu_requeue`, `--constraint=a100`, one GPU, four CPUs, 64 GB memory, a 10:30:00 wall time, `--requeue`, and `--open-mode=append`.
 - Use `/n/lab_storage/ydu_lab/jaysonzlin/Wan2.2_edited` as `PROJECT_DIR` and `current.sif` from that directory.
 - Retain `/n/holylabs`, `/net/holy-isilon`, and `/tmp:/dev/shm` Singularity binds.
 - Launch `train_pc.py --config configs/train/config_pc_utonia_overfit.yaml training.resume_from_checkpoint=latest` through the H200 single-GPU Accelerate config.
@@ -49,7 +49,7 @@ def test_utonia_launcher_uses_h200_requeue_and_latest_resume():
     for declaration in (
         "#SBATCH --job-name=utonia",
         "#SBATCH --partition=gpu_requeue",
-        "#SBATCH --constraint=h200",
+        "#SBATCH --constraint=a100",
         "#SBATCH --gres=gpu:1",
         "#SBATCH --cpus-per-task=4",
         "#SBATCH --mem=64G",

@@ -1,13 +1,13 @@
 from pathlib import Path
 
 
-def test_utonia_launcher_uses_h200_requeue_and_latest_resume():
+def test_utonia_launcher_uses_a100_requeue_and_latest_resume():
     script = Path("submit_utonia.sh").read_text()
 
     for declaration in (
         "#SBATCH --job-name=utonia",
         "#SBATCH --partition=gpu_requeue",
-        "#SBATCH --constraint=h200",
+        "#SBATCH --constraint=a100",
         "#SBATCH --gres=gpu:1",
         "#SBATCH --cpus-per-task=4",
         "#SBATCH --mem=64G",

@@ -3,12 +3,12 @@
 ## Goal
 
 Provide `submit_utonia.sh` to launch the Utonia-conditioned point-cloud
-overfit experiment on a requeueable H200 allocation.
+overfit experiment on a requeueable A100 allocation.
 
 ## Script behavior
 
 The script follows `submit_joint_trajectory_12_37.sh` for the cluster
-contract: one H200 GPU, `gpu_requeue`, four CPUs, 64 GB memory, a 10.5-hour
+contract: one A100 GPU, `gpu_requeue`, four CPUs, 64 GB memory, a 10.5-hour
 limit, requeue enabled, append-mode logs, and the existing Singularity bind
 mounts.
 

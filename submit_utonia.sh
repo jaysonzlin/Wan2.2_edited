@@ -1,7 +1,7 @@
 #!/bin/bash
 #SBATCH --job-name=utonia
 #SBATCH --partition=gpu_requeue
-#SBATCH --constraint=h200
+#SBATCH --constraint=a100
 #SBATCH --gres=gpu:1
 #SBATCH --cpus-per-task=4
 #SBATCH --mem=64G
