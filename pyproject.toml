@@ -54,7 +54,7 @@ discord = "https://discord.gg/p5XbdQV7"
 include = ["wan", "wan.*"]
 
 [tool.setuptools.package-data]
-"wan" = ["**/*.py"]
+"wan" = ["**/*.py", "utonia/LICENSE"]
 
 [tool.black]
 line-length = 88

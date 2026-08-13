@@ -31,3 +31,4 @@ def test_packaging_discovers_wan_subpackages():
 
     assert "[tool.setuptools.packages.find]" in definition
     assert 'include = ["wan", "wan.*"]' in definition
+    assert '"wan" = ["**/*.py", "utonia/LICENSE"]' in definition
