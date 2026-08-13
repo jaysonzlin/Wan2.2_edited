@@ -11,7 +11,7 @@ def test_current_def_declares_a_matching_utonia_runtime():
     assert "spconv-cu124" in definition
     assert "spconv-cu126" not in definition
     assert "torch-2.5.1+cu126.html" not in definition
-    assert "pip install --no-deps -e /opt/Utonia" in definition
+    assert "pip install --no-deps --no-build-isolation -e /opt/Utonia" in definition
     assert "flash_attn-2.6.3+cu126torch2.4-cp310-cp310-linux_x86_64.whl" in definition
     assert "$ENV_BIN/python - <<'PY'" not in definition
     assert "wget -qO /tmp/miniforge.sh" in definition

@@ -97,7 +97,7 @@ EOF
     # Utonia's CUDA extensions match the installed Torch 2.4/cu124 wheels.
     $ENV_BIN/pip install --no-cache-dir spconv-cu124 torch-scatter \
         -f https://data.pyg.org/whl/torch-2.4.0+cu124.html
-    $ENV_BIN/pip install --no-deps -e /opt/Utonia
+    $ENV_BIN/pip install --no-deps --no-build-isolation -e /opt/Utonia
 
     # Keep the precompiled Flash Attention wheel used by the existing container.
     $ENV_BIN/pip install https://github.com/mjun0812/flash-attention-prebuild-wheels/releases/download/v0.0.8/flash_attn-2.6.3+cu126torch2.4-cp310-cp310-linux_x86_64.whl
