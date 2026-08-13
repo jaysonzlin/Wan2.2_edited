@@ -11,9 +11,9 @@
 ## Global Constraints
 
 - Use `gpu_requeue`, `--constraint=a100`, one GPU, four CPUs, 64 GB memory, a 10:30:00 wall time, `--requeue`, and `--open-mode=append`.
-- Use `/n/lab_storage/ydu_lab/jaysonzlin/Wan2.2_edited` as `PROJECT_DIR` and `current.sif` from that directory.
+- Use `/n/lab_storage/ydu_lab/jaysonzlin/Wan2.2_edited` as `PROJECT_DIR` and `cur.sif` from that directory.
 - Retain `/n/holylabs`, `/net/holy-isilon`, and `/tmp:/dev/shm` Singularity binds.
-- Launch `train_pc.py --config configs/train/config_pc_utonia_overfit.yaml training.resume_from_checkpoint=latest` through the H200 single-GPU Accelerate config.
+- Launch `train_pc.py --config configs/train/config_pc_utonia_overfit.yaml resume_from_checkpoint=latest` through the H200 single-GPU Accelerate config.
 - Use `utonia_%j.out` and `utonia_%j.err` log names under the project `logs/` directory.
 
 ---
@@ -34,7 +34,7 @@
 - Create: `tests/test_submit_utonia.py`
 
 **Interfaces:**
-- Consumes: the project checkout, `${PROJECT_DIR}/current.sif`, Slurm environment variables, and `configs/accelerate/h200_single_gpu.yaml`.
+- Consumes: the project checkout, `${PROJECT_DIR}/cur.sif`, Slurm environment variables, and `configs/accelerate/h200_single_gpu.yaml`.
 - Produces: an `sbatch submit_utonia.sh` entry point that resumes `config_pc_utonia_overfit.yaml` from its latest checkpoint.
 
 - [ ] **Step 1: Write the failing static launcher test.**
@@ -65,7 +65,8 @@ def test_utonia_launcher_uses_h200_requeue_and_latest_resume():
     assert "--config_file configs/accelerate/h200_single_gpu.yaml" in script
     assert "train_pc.py" in script
     assert "--config configs/train/config_pc_utonia_overfit.yaml" in script
-    assert "training.resume_from_checkpoint=latest" in script
+    assert "resume_from_checkpoint=latest" in script
+    assert "training.resume_from_checkpoint=latest" not in script
 ```
 
 - [ ] **Step 2: Run the test to verify red.**
@@ -81,12 +82,12 @@ exec singularity exec --nv \
     -B /n/holylabs \
     -B /net/holy-isilon \
     -B /tmp:/dev/shm \
-    "${PROJECT_DIR}/current.sif" \
+    "${PROJECT_DIR}/cur.sif" \
     accelerate launch \
         --config_file configs/accelerate/h200_single_gpu.yaml \
         train_pc.py \
         --config configs/train/config_pc_utonia_overfit.yaml \
-        training.resume_from_checkpoint=latest
+        resume_from_checkpoint=latest
 ```
 
 - [ ] **Step 4: Run the static test to verify green.**

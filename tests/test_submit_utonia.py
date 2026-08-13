@@ -19,8 +19,9 @@ def test_utonia_launcher_uses_a100_requeue_and_latest_resume():
     ):
         assert declaration in script
 
-    assert '"${PROJECT_DIR}/current.sif"' in script
+    assert '"${PROJECT_DIR}/cur.sif"' in script
     assert "--config_file configs/accelerate/h200_single_gpu.yaml" in script
     assert "train_pc.py" in script
     assert "--config configs/train/config_pc_utonia_overfit.yaml" in script
-    assert "training.resume_from_checkpoint=latest" in script
+    assert "resume_from_checkpoint=latest" in script
+    assert "training.resume_from_checkpoint=latest" not in script

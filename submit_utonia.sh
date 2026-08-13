@@ -31,9 +31,9 @@ exec singularity exec --nv \
     -B /n/holylabs \
     -B /net/holy-isilon \
     -B /tmp:/dev/shm \
-    "${PROJECT_DIR}/current.sif" \
+    "${PROJECT_DIR}/cur.sif" \
     accelerate launch \
         --config_file configs/accelerate/h200_single_gpu.yaml \
         train_pc.py \
         --config configs/train/config_pc_utonia_overfit.yaml \
-        training.resume_from_checkpoint=latest
+        resume_from_checkpoint=latest

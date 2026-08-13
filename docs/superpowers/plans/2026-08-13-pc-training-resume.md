@@ -139,7 +139,7 @@ def test_pc_latest_checkpoint_reports_all_failed_candidates(tmp_path):
 
 - [ ] **Step 2: Run the helper tests to verify red.**
 
-Run: `conda run -n utonia-dev python -m pytest -q tests/test_train_pc.py -k pc_checkpoint`
+Run: `conda run -n utonia-dev python -m pytest -q tests/test_train_pc.py::test_pc_latest_checkpoint_falls_back_after_a_failed_load tests/test_train_pc.py::test_pc_explicit_checkpoint_propagates_load_failure tests/test_train_pc.py::test_pc_latest_checkpoint_reports_all_failed_candidates`
 
 Expected: collection fails because `load_pc_checkpoint_with_fallback` is not defined.
 
@@ -182,7 +182,7 @@ def load_pc_checkpoint_with_fallback(accelerator, output_dir: Path, setting: str
 
 - [ ] **Step 4: Run the helper tests to verify green.**
 
-Run: `conda run -n utonia-dev python -m pytest -q tests/test_train_pc.py -k pc_checkpoint`
+Run: `conda run -n utonia-dev python -m pytest -q tests/test_train_pc.py::test_pc_latest_checkpoint_falls_back_after_a_failed_load tests/test_train_pc.py::test_pc_explicit_checkpoint_propagates_load_failure tests/test_train_pc.py::test_pc_latest_checkpoint_reports_all_failed_candidates`
 
 Expected: PASS.
 
