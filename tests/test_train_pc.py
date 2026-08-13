@@ -9,6 +9,7 @@ from train_pc import (
     build_pc_training_dataset,
     create_progress_bar,
     create_pc_noise_scheduler,
+    first_unfinished_epoch,
     initialize_trackers,
     load_pc_checkpoint_with_fallback,
     prune_pc_checkpoints,
@@ -119,6 +120,10 @@ def test_visualization_cadence_uses_completed_epochs():
     assert not should_save_visualization(epoch=1, every_epochs=2)
     assert should_save_visualization(epoch=2, every_epochs=2)
     assert should_save_visualization(epoch=3, every_epochs=3)
+
+
+def test_resume_starts_visualization_epochs_after_the_saved_single_sample_step():
+    assert first_unfinished_epoch(completed_steps=250) == 251
 
 
 def test_initialize_trackers_uses_the_configured_wandb_project():

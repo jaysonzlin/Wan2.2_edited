@@ -25,6 +25,11 @@ def should_save_visualization(epoch: int, every_epochs: int) -> bool:
     return epoch % every_epochs == 0
 
 
+def first_unfinished_epoch(completed_steps: int) -> int:
+    """Return the next epoch for this single-sample overfit run after resume."""
+    return completed_steps + 1
+
+
 def create_progress_bar(total: int, initial: int, enabled: bool):
     """Create a rank-zero progress bar over synchronized optimizer updates."""
     from tqdm.auto import tqdm
@@ -208,7 +213,9 @@ def main(config=None) -> None:
         initial=step,
         enabled=accelerator.is_main_process,
     )
-    for epoch in range(1, config["num_train_epochs"] + 1):
+    for epoch in range(
+        first_unfinished_epoch(step), config["num_train_epochs"] + 1
+    ):
         visualization_batch = None
         for batch in loader:
             if visualization_batch is None:
