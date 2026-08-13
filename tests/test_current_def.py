@@ -12,3 +12,7 @@ def test_current_def_declares_a_matching_utonia_runtime():
     assert "flash-attn==2.6.3\" --no-build-isolation" in definition
     assert "$ENV_BIN/python - <<'PY'" not in definition
     assert "torch2.4-cp310" not in definition
+    assert "wget -qO /tmp/miniforge.sh" in definition
+    assert "bash /tmp/miniforge.sh -b -p /opt/conda" in definition
+    assert "rm /tmp/miniforge.sh" in definition
+    assert "./Miniforge3-Linux-x86_64.sh /opt/miniforge.sh" not in definition
