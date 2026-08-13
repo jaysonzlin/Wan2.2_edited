@@ -11,6 +11,7 @@ from train_pc import (
     create_pc_noise_scheduler,
     initialize_trackers,
     load_pc_checkpoint_with_fallback,
+    prune_pc_checkpoints,
     should_save_visualization,
     visualization_path,
 )
@@ -92,6 +93,26 @@ def test_pc_latest_checkpoint_reports_all_failed_candidates(tmp_path):
 
     with pytest.raises(RuntimeError, match="checkpoint-500, checkpoint-250"):
         load_pc_checkpoint_with_fallback(FakeAccelerator(), tmp_path, "latest")
+
+
+def test_prune_pc_checkpoints_keeps_only_latest_numeric_states():
+    with tempfile.TemporaryDirectory() as temporary_directory:
+        root = Path(temporary_directory)
+        for name in (
+            "checkpoint-250",
+            "checkpoint-500",
+            "checkpoint-750",
+            "checkpoint-draft",
+        ):
+            (root / name).mkdir()
+
+        prune_pc_checkpoints(root, 2)
+
+        assert {path.name for path in root.iterdir()} == {
+            "checkpoint-500",
+            "checkpoint-750",
+            "checkpoint-draft",
+        }
 
 
 def test_visualization_cadence_uses_completed_epochs():

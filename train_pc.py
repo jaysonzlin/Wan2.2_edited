@@ -1,6 +1,7 @@
 """Accelerate entry point for Wan point-cloud flow training."""
 
 import argparse
+import shutil
 from pathlib import Path
 
 from training.pc_config import load_pc_config
@@ -84,6 +85,20 @@ def load_pc_checkpoint_with_fallback(
     raise RuntimeError(
         f"Could not load any checkpoint selected by resume_from_checkpoint=latest: {attempted}"
     ) from failures[-1][1]
+
+
+def prune_pc_checkpoints(root: str | Path, limit: int) -> None:
+    """Keep only the newest numeric Accelerate PC checkpoint directories."""
+    checkpoints = sorted(
+        (
+            path
+            for path in Path(root).glob("checkpoint-*")
+            if path.is_dir() and path.name.removeprefix("checkpoint-").isdigit()
+        ),
+        key=lambda path: int(path.name.removeprefix("checkpoint-")),
+    )
+    for checkpoint in checkpoints[:-limit]:
+        shutil.rmtree(checkpoint)
 
 
 def create_pc_noise_scheduler(objective: dict):
@@ -229,6 +244,10 @@ def main(config=None) -> None:
                 accelerator.log({"train/loss": loss.detach().item(), "train/learning_rate": scheduler.get_last_lr()[0]}, step=step)
                 if step % config["checkpointing_steps"] == 0:
                     accelerator.save_state(output_dir / f"checkpoint-{step}")
+                    if accelerator.is_main_process:
+                        prune_pc_checkpoints(
+                            output_dir, config["checkpoints_total_limit"]
+                        )
                 if step >= config["max_train_steps"]:
                     break
         if (
