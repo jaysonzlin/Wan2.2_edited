@@ -5,9 +5,12 @@ def test_current_def_declares_a_matching_utonia_runtime():
     definition = Path("current.def").read_text()
 
     assert "/opt/Utonia" in definition
-    assert "https://download.pytorch.org/whl/cu126" in definition
-    assert "torch-2.5.1+cu126.html" in definition
-    assert "spconv-cu126==2.3.8" in definition
+    assert '"torch==2.4.1" "torchvision==0.19.1"' in definition
+    assert "https://download.pytorch.org/whl/cu124" in definition
+    assert "torch-2.4.0+cu124.html" in definition
+    assert "spconv-cu124" in definition
+    assert "spconv-cu126" not in definition
+    assert "torch-2.5.1+cu126.html" not in definition
     assert "pip install --no-deps -e /opt/Utonia" in definition
     assert "flash_attn-2.6.3+cu126torch2.4-cp310-cp310-linux_x86_64.whl" in definition
     assert "$ENV_BIN/python - <<'PY'" not in definition

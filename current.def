@@ -62,8 +62,8 @@ From: nvidia/cuda:12.9.2-devel-ubuntu22.04
 
     $ENV_BIN/pip install --upgrade pip setuptools wheel
     
-    # Install the CUDA 12.6 PyTorch wheels used by the matching Utonia extensions.
-    $ENV_BIN/pip install "numpy>=1.23.5,<2" "torch==2.5.1" "torchvision==0.20.1" --extra-index-url https://download.pytorch.org/whl/cu126
+    # Install the CUDA 12.4 PyTorch wheels used by the matching Utonia extensions.
+    $ENV_BIN/pip install "numpy>=1.23.5,<2" "torch==2.4.1" "torchvision==0.19.1" --extra-index-url https://download.pytorch.org/whl/cu124
 
     # 5. Install Simplified Requirements Configuration
     cat <<EOF > /tmp/requirements.txt
@@ -94,9 +94,9 @@ EOF
     
     $ENV_BIN/pip install -r /tmp/requirements.txt
     
-    # Utonia's CUDA extensions match the installed Torch 2.5.1/cu126 wheels.
-    $ENV_BIN/pip install --no-cache-dir "spconv-cu126==2.3.8" torch-scatter \
-        -f https://data.pyg.org/whl/torch-2.5.1+cu126.html
+    # Utonia's CUDA extensions match the installed Torch 2.4/cu124 wheels.
+    $ENV_BIN/pip install --no-cache-dir spconv-cu124 torch-scatter \
+        -f https://data.pyg.org/whl/torch-2.4.0+cu124.html
     $ENV_BIN/pip install --no-deps -e /opt/Utonia
 
     # Keep the precompiled Flash Attention wheel used by the existing container.
