@@ -15,9 +15,16 @@ def test_current_def_declares_a_matching_utonia_runtime():
     assert "pip install --no-deps --no-build-isolation -e" not in definition
     assert "pip install --upgrade pip setuptools wheel" in definition
     assert "scipy" in definition
+    assert "transformers>=4.49.0,<=4.51.3" in definition
     assert "flash_attn-2.6.3+cu126torch2.4-cp310-cp310-linux_x86_64.whl" in definition
     assert "$ENV_BIN/python - <<'PY'" not in definition
     assert "wget -qO /tmp/miniforge.sh" in definition
     assert "bash /tmp/miniforge.sh -b -p /opt/conda" in definition
     assert "rm /tmp/miniforge.sh" in definition
     assert "./Miniforge3-Linux-x86_64.sh /opt/miniforge.sh" not in definition
+
+
+def test_project_dependencies_cap_transformers_for_torch_2_4():
+    definition = Path("pyproject.toml").read_text()
+
+    assert '"transformers>=4.49.0,<=4.51.3"' in definition

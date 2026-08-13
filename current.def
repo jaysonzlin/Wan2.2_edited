@@ -65,7 +65,7 @@ From: nvidia/cuda:12.9.2-devel-ubuntu22.04
     cat <<EOF > /tmp/requirements.txt
 opencv-python>=4.9.0.80
 diffusers>=0.31.0
-transformers>=4.49.0
+transformers>=4.49.0,<=4.51.3
 tokenizers>=0.20.3
 accelerate>=1.1.1
 tqdm
