@@ -22,7 +22,7 @@ def valid_config_text(**model_overrides) -> str:
         f"model:\n{model_lines}"
         "objective:\n  type: ddpm\n  num_train_timesteps: 1000\n"
         "  beta_schedule: linear\n  time_shift: 5.0\n"
-        "lr_scheduler: cosine\n"
+        "lr_scheduler: cosine\ncheckpoints_total_limit: 2\n"
     )
 
 
@@ -102,6 +102,20 @@ def test_pc_config_rejects_invalid_resume_setting(tmp_path, resume):
     path.write_text(valid_config_text() + f"resume_from_checkpoint: {resume}\n")
 
     with pytest.raises(ValueError, match="resume_from_checkpoint"):
+        load_pc_config(path, [])
+
+
+@pytest.mark.parametrize("limit", ["0", "-1", "1.5", "null", "invalid"])
+def test_pc_config_rejects_invalid_checkpoint_retention_limit(tmp_path, limit):
+    path = tmp_path / "config.yaml"
+    path.write_text(
+        valid_config_text().replace(
+            "checkpoints_total_limit: 2\n",
+            f"checkpoints_total_limit: {limit}\n",
+        )
+    )
+
+    with pytest.raises(ValueError, match="checkpoints_total_limit must be a positive integer"):
         load_pc_config(path, [])
 
 
