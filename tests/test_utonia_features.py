@@ -5,6 +5,7 @@ import torch
 
 from training.utonia_features import (
     load_cached_utonia_features,
+    prepare_utonia_color,
     prepare_utonia_feature_cache,
 )
 
@@ -31,6 +32,40 @@ class FakeExtractor:
         assert coordinates.shape == (2048, 3)
         assert rgb.dtype == np.uint8
         return torch.from_numpy(np.concatenate([coordinates, rgb[:, :1]], axis=1))
+
+
+@pytest.mark.parametrize(
+    ("rgb", "expected"),
+    [
+        (
+            np.array([[0, 127, 255]], dtype=np.uint8),
+            np.array([[0.0, 127.0, 255.0]], dtype=np.float32),
+        ),
+        (
+            np.array([[0.0, 0.5, 1.0]], dtype=np.float32),
+            np.array([[0.0, 127.5, 255.0]], dtype=np.float32),
+        ),
+    ],
+)
+def test_prepare_utonia_color_preserves_uint8_and_scales_unit_float_rgb(rgb, expected):
+    prepared = prepare_utonia_color(rgb)
+
+    assert prepared.dtype == np.float32
+    np.testing.assert_allclose(prepared, expected)
+
+
+@pytest.mark.parametrize(
+    "rgb",
+    [
+        np.array([[0.0, 0.5, 1.1]], dtype=np.float32),
+        np.array([[0.0, np.nan, 1.0]], dtype=np.float32),
+        np.zeros((1, 2), dtype=np.float32),
+        np.zeros((1, 3), dtype=np.int16),
+    ],
+)
+def test_prepare_utonia_color_rejects_invalid_stored_rgb(rgb):
+    with pytest.raises(ValueError, match="rgb"):
+        prepare_utonia_color(rgb)
 
 
 def test_prepare_cache_reuses_matching_entry_and_preserves_point_order(tmp_path):

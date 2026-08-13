@@ -40,6 +40,27 @@ def _source_fingerprint(coordinates: np.ndarray, rgb: np.ndarray) -> str:
     return digest.hexdigest()
 
 
+def validate_utonia_rgb(rgb: np.ndarray, *, point_count: int = 2048) -> None:
+    """Validate RGB stored by a supported Utonia point-cloud source."""
+    if rgb.shape != (point_count, 3):
+        raise ValueError(f"rgb must have shape ({point_count}, 3)")
+    if rgb.dtype == np.uint8:
+        return
+    if not np.issubdtype(rgb.dtype, np.floating):
+        raise ValueError("rgb must have dtype uint8 or a floating-point dtype")
+    if not np.isfinite(rgb).all():
+        raise ValueError("rgb floating-point values must be finite")
+    if rgb.min() < 0.0 or rgb.max() > 1.0:
+        raise ValueError("rgb floating-point values must be in [0, 1]")
+
+
+def prepare_utonia_color(rgb: np.ndarray) -> np.ndarray:
+    """Return stored RGB on Utonia's expected pre-NormalizeColor scale."""
+    validate_utonia_rgb(rgb, point_count=rgb.shape[0])
+    color = np.asarray(rgb, dtype=np.float32)
+    return color if rgb.dtype == np.uint8 else color * 255.0
+
+
 def _read_source(path: Path) -> tuple[np.ndarray, np.ndarray]:
     try:
         with h5py.File(path, "r") as source:
@@ -49,8 +70,10 @@ def _read_source(path: Path) -> tuple[np.ndarray, np.ndarray]:
         raise ValueError(f"Unable to read Utonia source data from {path}") from error
     if coordinates.shape != (2048, 3):
         raise ValueError(f"{path}: frame-zero coordinates must have shape (2048, 3)")
-    if rgb.shape != (2048, 3) or rgb.dtype != np.uint8:
-        raise ValueError(f"{path}: rgb must have dtype uint8 and shape (2048, 3)")
+    try:
+        validate_utonia_rgb(rgb)
+    except ValueError as error:
+        raise ValueError(f"{path}: {error}") from error
     return coordinates, rgb
 
 
@@ -236,7 +259,7 @@ class UtoniaFeatureExtractor:
         seed = int(_source_fingerprint(coordinates, rgb)[:16], 16) % (2**32)
         point = {
             "coord": coordinates.copy(),
-            "color": rgb.copy(),
+            "color": prepare_utonia_color(rgb),
             "normal": np.zeros_like(coordinates),
         }
         with _numpy_seed(seed):
