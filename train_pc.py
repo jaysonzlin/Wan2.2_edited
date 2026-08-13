@@ -184,7 +184,10 @@ def main(config=None) -> None:
     )
     model, optimizer, loader, scheduler = accelerator.prepare(model, optimizer, loader, scheduler)
     generator = torch.Generator(device=accelerator.device).manual_seed(config["seed"])
-    step = 0
+    resume_path = load_pc_checkpoint_with_fallback(
+        accelerator, output_dir, config.get("resume_from_checkpoint")
+    )
+    step = int(resume_path.name.removeprefix("checkpoint-")) if resume_path else 0
     progress_bar = create_progress_bar(
         total=config["max_train_steps"],
         initial=step,

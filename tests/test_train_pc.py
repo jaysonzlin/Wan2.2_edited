@@ -38,6 +38,16 @@ def test_progress_bar_tracks_optimizer_steps():
         progress_bar.close()
 
 
+def test_train_pc_restores_step_after_accelerator_prepare():
+    source = Path("train_pc.py").read_text()
+
+    prepared = source.index("accelerator.prepare")
+    restored = source.index("load_pc_checkpoint_with_fallback", prepared)
+    assert restored > prepared
+    assert 'step = int(resume_path.name.removeprefix("checkpoint-"))' in source
+    assert "initial=step" in source
+
+
 def test_pc_latest_checkpoint_falls_back_after_a_failed_load():
     class FakeAccelerator:
         def __init__(self):
