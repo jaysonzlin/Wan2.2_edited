@@ -44,6 +44,48 @@ def initialize_trackers(accelerator, config: dict) -> None:
         accelerator.init_trackers(config["tracker_project_name"], config=config)
 
 
+def _pc_checkpoint_paths(output_dir: Path, setting: str | None) -> list[Path]:
+    if not setting:
+        return []
+    if setting != "latest":
+        return [Path(setting)]
+    return sorted(
+        (
+            path
+            for path in output_dir.glob("checkpoint-*")
+            if path.is_dir() and path.name.removeprefix("checkpoint-").isdigit()
+        ),
+        key=lambda path: int(path.name.removeprefix("checkpoint-")),
+        reverse=True,
+    )
+
+
+def load_pc_checkpoint_with_fallback(
+    accelerator, output_dir: Path, setting: str | None
+) -> Path | None:
+    """Load the requested PC state, falling back from incomplete latest checkpoints."""
+    checkpoints = _pc_checkpoint_paths(output_dir, setting)
+    if not checkpoints:
+        return None
+
+    failures = []
+    for checkpoint in checkpoints:
+        try:
+            accelerator.load_state(checkpoint)
+        except Exception as error:
+            if setting != "latest":
+                raise
+            failures.append((checkpoint, error))
+            print(f"Could not load {checkpoint}; trying the next most recent checkpoint: {error}")
+        else:
+            return checkpoint
+
+    attempted = ", ".join(path.name for path, _ in failures)
+    raise RuntimeError(
+        f"Could not load any checkpoint selected by resume_from_checkpoint=latest: {attempted}"
+    ) from failures[-1][1]
+
+
 def create_pc_noise_scheduler(objective: dict):
     if objective["type"] == "flow":
         return None

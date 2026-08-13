@@ -1,5 +1,6 @@
 import subprocess
 import sys
+import tempfile
 from pathlib import Path
 
 import pytest
@@ -9,6 +10,7 @@ from train_pc import (
     create_progress_bar,
     create_pc_noise_scheduler,
     initialize_trackers,
+    load_pc_checkpoint_with_fallback,
     should_save_visualization,
     visualization_path,
 )
@@ -34,6 +36,52 @@ def test_progress_bar_tracks_optimizer_steps():
         assert progress_bar.n == 2
     finally:
         progress_bar.close()
+
+
+def test_pc_latest_checkpoint_falls_back_after_a_failed_load():
+    class FakeAccelerator:
+        def __init__(self):
+            self.attempts = []
+
+        def load_state(self, path):
+            self.attempts.append(Path(path).name)
+            if Path(path).name == "checkpoint-750":
+                raise RuntimeError("incomplete checkpoint")
+
+    with tempfile.TemporaryDirectory() as temporary_directory:
+        root = Path(temporary_directory)
+        for step in (250, 500, 750):
+            (root / f"checkpoint-{step}").mkdir()
+        accelerator = FakeAccelerator()
+
+        resumed = load_pc_checkpoint_with_fallback(accelerator, root, "latest")
+
+    assert resumed.name == "checkpoint-500"
+    assert accelerator.attempts == ["checkpoint-750", "checkpoint-500"]
+
+
+def test_pc_explicit_checkpoint_propagates_load_failure(tmp_path):
+    checkpoint = tmp_path / "checkpoint-250"
+    checkpoint.mkdir()
+
+    class FakeAccelerator:
+        def load_state(self, _path):
+            raise RuntimeError("incomplete checkpoint")
+
+    with pytest.raises(RuntimeError, match="incomplete checkpoint"):
+        load_pc_checkpoint_with_fallback(FakeAccelerator(), tmp_path, str(checkpoint))
+
+
+def test_pc_latest_checkpoint_reports_all_failed_candidates(tmp_path):
+    for step in (250, 500):
+        (tmp_path / f"checkpoint-{step}").mkdir()
+
+    class FakeAccelerator:
+        def load_state(self, path):
+            raise RuntimeError(f"incomplete {Path(path).name}")
+
+    with pytest.raises(RuntimeError, match="checkpoint-500, checkpoint-250"):
+        load_pc_checkpoint_with_fallback(FakeAccelerator(), tmp_path, "latest")
 
 
 def test_visualization_cadence_uses_completed_epochs():
