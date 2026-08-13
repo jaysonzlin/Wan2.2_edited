@@ -24,3 +24,10 @@ def test_vendored_utonia_contains_only_the_inference_runtime():
     assert not (root / "pca_trajectory.py").exists()
     assert not (root / "joint_trajectory_pca.py").exists()
     assert not (root / "rgb_trajectory.py").exists()
+
+
+def test_packaging_discovers_wan_subpackages():
+    definition = Path("pyproject.toml").read_text()
+
+    assert "[tool.setuptools.packages.find]" in definition
+    assert 'include = ["wan", "wan.*"]' in definition
