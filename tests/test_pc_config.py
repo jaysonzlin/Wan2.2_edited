@@ -88,6 +88,23 @@ def test_pc_config_rejects_unknown_learning_rate_scheduler(tmp_path):
         load_pc_config(path, [])
 
 
+@pytest.mark.parametrize("resume", ["latest", "outputs/run/checkpoint-250"])
+def test_pc_config_accepts_resume_setting(tmp_path, resume):
+    path = tmp_path / "config.yaml"
+    path.write_text(valid_config_text() + f"resume_from_checkpoint: {resume}\n")
+
+    assert load_pc_config(path, [])["resume_from_checkpoint"] == resume
+
+
+@pytest.mark.parametrize("resume", ["0", "[]", "'   '"])
+def test_pc_config_rejects_invalid_resume_setting(tmp_path, resume):
+    path = tmp_path / "config.yaml"
+    path.write_text(valid_config_text() + f"resume_from_checkpoint: {resume}\n")
+
+    with pytest.raises(ValueError, match="resume_from_checkpoint"):
+        load_pc_config(path, [])
+
+
 @pytest.mark.parametrize(
     ("model_overrides", "message"),
     [

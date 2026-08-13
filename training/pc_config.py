@@ -78,3 +78,8 @@ def validate_pc_config(config: dict) -> None:
         raise ValueError("DDPM objective.beta_schedule must be 'linear'")
     if config.get("lr_scheduler") not in {"cosine", "constant"}:
         raise ValueError("lr_scheduler must be 'cosine' or 'constant'")
+    resume = config.get("resume_from_checkpoint")
+    if resume is not None and (not isinstance(resume, str) or not resume.strip()):
+        raise ValueError(
+            "resume_from_checkpoint must be null, 'latest', or a non-empty path string"
+        )
