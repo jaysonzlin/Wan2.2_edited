@@ -22,11 +22,14 @@ class PCFlowPipeline:
         device: str | torch.device,
         num_inference_steps: int,
         generator: torch.Generator | None = None,
+        utonia_features: torch.Tensor | None = None,
     ) -> torch.Tensor:
         device = torch.device(device)
         init_pc = init_pc.to(device)
         initial_linear_velocity = initial_linear_velocity.to(device)
         initial_angular_velocity = initial_angular_velocity.to(device)
+        if utonia_features is not None:
+            utonia_features = utonia_features.to(device)
         batch_size, _, n_points, _ = init_pc.shape
         sample = torch.randn(
             (batch_size, self.model.n_future_frames, 1, n_points, 3),
@@ -51,6 +54,7 @@ class PCFlowPipeline:
                 init_pc,
                 initial_linear_velocity,
                 initial_angular_velocity,
+                utonia_features=utonia_features,
             )
             sample = self.scheduler.step(
                 flow, timestep, sample, return_dict=True, generator=generator
@@ -65,16 +69,34 @@ class PCDDIMPipeline:
         self.model, self.scheduler = model, scheduler
 
     @torch.no_grad()
-    def __call__(self, init_pc, initial_linear_velocity, initial_angular_velocity, device, num_inference_steps, generator=None):
+    def __call__(
+        self,
+        init_pc,
+        initial_linear_velocity,
+        initial_angular_velocity,
+        device,
+        num_inference_steps,
+        generator=None,
+        utonia_features=None,
+    ):
         device = torch.device(device)
         init_pc = init_pc.to(device)
         linear = initial_linear_velocity.to(device)
         angular = initial_angular_velocity.to(device)
+        if utonia_features is not None:
+            utonia_features = utonia_features.to(device)
         batch_size, _, n_points, _ = init_pc.shape
         sample = torch.randn((batch_size, self.model.n_future_frames, 1, n_points, 3), device=device, dtype=init_pc.dtype, generator=generator)
         self.scheduler.set_timesteps(num_inference_steps, device=device)
         for timestep in self.scheduler.timesteps:
             frame_times = torch.full((batch_size, self.model.n_future_frames + 1), timestep.item(), device=device, dtype=sample.dtype)
-            prediction = self.model(sample, frame_times, init_pc, linear, angular)
+            prediction = self.model(
+                sample,
+                frame_times,
+                init_pc,
+                linear,
+                angular,
+                utonia_features=utonia_features,
+            )
             sample = self.scheduler.step(prediction, timestep, sample, generator=generator).prev_sample
         return sample

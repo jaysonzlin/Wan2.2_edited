@@ -8,7 +8,12 @@ from wan.pc_pipeline import PCDDIMPipeline, PCFlowPipeline
 class ZeroFlowModel(torch.nn.Module):
     n_future_frames = 48
 
-    def forward(self, noisy, frame_times, init_pc, linear, angular):
+    def __init__(self):
+        super().__init__()
+        self.utonia_conditions = []
+
+    def forward(self, noisy, frame_times, init_pc, linear, angular, utonia_features=None):
+        self.utonia_conditions.append(utonia_features)
         return torch.zeros_like(noisy)
 
 
@@ -39,6 +44,24 @@ def test_pipeline_adds_source_only_after_integration():
     assert torch.allclose(output, torch.full_like(output, 7.0))
 
 
+def test_flow_pipeline_forwards_utonia_features_to_every_model_step():
+    model = ZeroFlowModel()
+    pipeline = PCFlowPipeline(model, FakeFlowScheduler(), time_shift=5.0)
+    features = torch.randn(1, 2, 5)
+
+    pipeline(
+        torch.zeros(1, 1, 2, 3),
+        torch.zeros(1, 1, 3),
+        torch.zeros(1, 1, 3),
+        "cpu",
+        2,
+        utonia_features=features,
+    )
+
+    assert len(model.utonia_conditions) == 2
+    assert all(torch.equal(condition, features) for condition in model.utonia_conditions)
+
+
 class RecordingDDPMModel(torch.nn.Module):
     n_future_frames = 48
 
@@ -46,8 +69,9 @@ class RecordingDDPMModel(torch.nn.Module):
         super().__init__()
         self.frame_times = []
 
-    def forward(self, noisy, frame_times, init_pc, linear, angular):
+    def forward(self, noisy, frame_times, init_pc, linear, angular, utonia_features=None):
         self.frame_times.append(frame_times.detach().clone())
+        self.utonia_conditions = getattr(self, "utonia_conditions", []) + [utonia_features]
         return torch.zeros_like(noisy)
 
 
@@ -75,3 +99,21 @@ def test_ddim_pipeline_uses_one_timestep_for_all_49_tokens_and_returns_absolute_
     assert len(model.frame_times) == 2
     assert all(torch.equal(times, torch.full_like(times, value)) for times, value in zip(model.frame_times, (9, 3)))
     assert torch.equal(output, torch.zeros_like(output))
+
+
+def test_ddim_pipeline_forwards_utonia_features_to_every_model_step():
+    model = RecordingDDPMModel()
+    pipeline = PCDDIMPipeline(model, FakeDDIMScheduler())
+    features = torch.randn(1, 2, 5)
+
+    pipeline(
+        torch.zeros(1, 1, 2, 3),
+        torch.zeros(1, 1, 3),
+        torch.zeros(1, 1, 3),
+        "cpu",
+        2,
+        utonia_features=features,
+    )
+
+    assert len(model.utonia_conditions) == 2
+    assert all(torch.equal(condition, features) for condition in model.utonia_conditions)
