@@ -4,7 +4,18 @@ import torch
 from wan.modules.pc_trajectory import PCTrajectoryModel
 
 
-def make_tiny_model(objective_type="flow", utonia_feature_dim=None):
+def make_tiny_model(
+    objective_type="flow",
+    utonia_feature_dim=None,
+    conditioning="velocity",
+    history_frames=1,
+):
+    conditioning_kwargs = {}
+    if conditioning != "velocity" or history_frames != 1:
+        conditioning_kwargs = {
+            "conditioning": conditioning,
+            "history_frames": history_frames,
+        }
     return PCTrajectoryModel(
         n_points=8,
         n_future_frames=48,
@@ -14,6 +25,7 @@ def make_tiny_model(objective_type="flow", utonia_feature_dim=None):
         point_embed=True,
         objective_type=objective_type,
         utonia_feature_dim=utonia_feature_dim,
+        **conditioning_kwargs,
     )
 
 
@@ -197,6 +209,50 @@ def test_model_fuses_per_point_utonia_features_across_all_frames():
 
     assert output.shape == (2, 48, 1, 8, 3)
     assert captured["tokens"].shape == (2, 49, 8, 69)
+
+
+def test_history_model_predicts_45_future_frames_from_four_clean_history_frames():
+    model = make_tiny_model(
+        objective_type="ddpm", conditioning="history", history_frames=4
+    )
+
+    output = model(
+        torch.randn(2, 45, 1, 8, 3),
+        torch.tensor([[0.0] * 4 + [500.0] * 45] * 2),
+        torch.randn(2, 4, 1, 8, 3),
+    )
+
+    assert output.shape == (2, 45, 1, 8, 3)
+
+
+def test_history_model_broadcasts_utonia_features_to_all_49_temporal_tokens():
+    model = make_tiny_model(
+        objective_type="ddpm",
+        utonia_feature_dim=5,
+        conditioning="history",
+        history_frames=4,
+    )
+    captured = {}
+    handle = model.utonia_feature_projection.register_forward_pre_hook(
+        lambda _module, inputs: captured.setdefault("tokens", inputs[0].detach().clone())
+    )
+    features = torch.randn(2, 8, 5)
+    try:
+        output = model(
+            torch.randn(2, 45, 1, 8, 3),
+            torch.tensor([[0.0] * 4 + [500.0] * 45] * 2),
+            torch.randn(2, 4, 1, 8, 3),
+            utonia_features=features,
+        )
+    finally:
+        handle.remove()
+
+    assert output.shape == (2, 45, 1, 8, 3)
+    assert captured["tokens"].shape == (2, 49, 8, 69)
+    assert torch.equal(
+        captured["tokens"][:, :1, :, 64:].expand_as(captured["tokens"][:, :, :, 64:]),
+        captured["tokens"][:, :, :, 64:],
+    )
 
 
 @pytest.mark.parametrize(

@@ -33,3 +33,22 @@ def test_flow_target_is_noise_minus_displacement(monkeypatch):
     )
 
     assert torch.equal(batch.velocity_target, torch.full((1, 48, 1, 1, 3), 2.0))
+
+
+def test_flow_batch_uses_zero_times_for_four_known_history_frames():
+    history = torch.full((1, 4, 1, 2, 3), 10.0)
+    future = torch.full((1, 45, 1, 2, 3), 11.0)
+
+    batch = make_pc_flow_batch(
+        future,
+        history,
+        torch.Generator().manual_seed(0),
+        5.0,
+        1000,
+        known_frames=4,
+    )
+
+    assert batch.model_input.shape == future.shape
+    assert batch.velocity_target.shape == future.shape
+    assert torch.equal(batch.frame_times[:, :4], torch.zeros(1, 4))
+    assert torch.all(batch.frame_times[:, 4:] > 0)
