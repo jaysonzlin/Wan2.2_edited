@@ -129,6 +129,9 @@ def build_pc_training_dataset(
     """Create the baseline dataset or precompute the Utonia-backed variant."""
     data = config["data"]
     if not config["model"].get("utonia_enabled", False):
+        object_id = data.get("object_id")
+        if object_id is not None:
+            return dataset_factory(data["dataset_root"], object_id=object_id), None
         return dataset_factory(data["dataset_root"]), None
 
     object_id = data["object_id"]

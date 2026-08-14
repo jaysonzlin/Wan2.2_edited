@@ -237,6 +237,27 @@ def test_build_pc_training_dataset_keeps_baseline_path_cache_free():
     assert calls == [(("input",), {})]
 
 
+def test_build_pc_training_dataset_uses_object_dataset_without_utonia():
+    calls = []
+
+    def dataset_factory(*args, **kwargs):
+        calls.append((args, kwargs))
+        return "object-dataset"
+
+    dataset, feature_dim = build_pc_training_dataset(
+        {
+            "data": {"dataset_root": "input", "object_id": "000"},
+            "model": {"utonia_enabled": False},
+        },
+        dataset_factory=dataset_factory,
+        extractor_factory=lambda _root: pytest.fail("extractor should not be built"),
+        cache_preparer=lambda *_args: pytest.fail("cache should not be prepared"),
+    )
+
+    assert (dataset, feature_dim) == ("object-dataset", None)
+    assert calls == [(("input",), {"object_id": "000"})]
+
+
 def test_ddpm_objective_creates_sample_prediction_scheduler():
     scheduler = create_pc_noise_scheduler(
         {"type": "ddpm", "num_train_timesteps": 1000, "beta_schedule": "linear"}
