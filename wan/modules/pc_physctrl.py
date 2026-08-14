@@ -103,13 +103,20 @@ class PhysCtrlLayerNormZero(nn.Module):
     def forward(
         self,
         points: torch.Tensor,
-        controls: torch.Tensor,
+        controls: torch.Tensor | None,
         temb: torch.Tensor,
-    ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
+    ) -> tuple[
+        torch.Tensor,
+        torch.Tensor | None,
+        torch.Tensor,
+        torch.Tensor | None,
+    ]:
         shift, scale, gate, enc_shift, enc_scale, enc_gate = self.linear(
             self.act(temb)
         ).chunk(6, dim=-1)
         points = self.norm(points) * (1 + scale[:, None]) + shift[:, None]
+        if controls is None:
+            return points, None, gate[:, None], None
         controls = (
             self.norm(controls) * (1 + enc_scale[:, None]) + enc_shift[:, None]
         )
@@ -152,29 +159,39 @@ class PhysCtrlSpatialTemporalBlock(nn.Module):
     def forward(
         self,
         points: torch.Tensor,
-        controls: torch.Tensor,
+        controls: torch.Tensor | None,
         temb: torch.Tensor,
-    ) -> tuple[torch.Tensor, torch.Tensor]:
+    ) -> tuple[torch.Tensor, torch.Tensor | None]:
         batch, frames, count, dim = points.shape
         flat_points = points.reshape(batch * frames, count, dim)
-        flat_controls = controls.reshape(batch * frames, 2, dim)
+        flat_controls = (
+            controls.reshape(batch * frames, 2, dim) if controls is not None else None
+        )
         flat_temb = temb.reshape(batch * frames, dim)
 
         mod_points, mod_controls, point_gate, control_gate = self.norm1(
             flat_points, flat_controls, flat_temb
         )
-        joined = torch.cat((mod_controls, mod_points), dim=1)
-        attended = self.spatial_attention(joined)
-        flat_controls = flat_controls + control_gate * attended[:, :2]
-        flat_points = flat_points + point_gate * attended[:, 2:]
+        if mod_controls is None:
+            flat_points = flat_points + point_gate * self.spatial_attention(mod_points)
+        else:
+            joined = torch.cat((mod_controls, mod_points), dim=1)
+            attended = self.spatial_attention(joined)
+            assert control_gate is not None
+            flat_controls = flat_controls + control_gate * attended[:, :2]
+            flat_points = flat_points + point_gate * attended[:, 2:]
 
         mod_points, mod_controls, point_gate, control_gate = self.norm2(
             flat_points, flat_controls, flat_temb
         )
-        joined = torch.cat((mod_controls, mod_points), dim=1)
-        ff_output = self.mlp(joined)
-        flat_controls = flat_controls + control_gate * ff_output[:, :2]
-        flat_points = flat_points + point_gate * ff_output[:, 2:]
+        if mod_controls is None:
+            flat_points = flat_points + point_gate * self.mlp(mod_points)
+        else:
+            joined = torch.cat((mod_controls, mod_points), dim=1)
+            ff_output = self.mlp(joined)
+            assert control_gate is not None
+            flat_controls = flat_controls + control_gate * ff_output[:, :2]
+            flat_points = flat_points + point_gate * ff_output[:, 2:]
 
         tracks = flat_points.reshape(batch, frames, count, dim).permute(0, 2, 1, 3)
         tracks = tracks.reshape(batch * count, frames, dim)
@@ -184,7 +201,11 @@ class PhysCtrlSpatialTemporalBlock(nn.Module):
             self.temporal_norm(tracks, track_temb)
         )
         points = tracks.reshape(batch, count, frames, dim).permute(0, 2, 1, 3)
-        controls = flat_controls.reshape(batch, frames, 2, dim)
+        controls = (
+            flat_controls.reshape(batch, frames, 2, dim)
+            if flat_controls is not None
+            else None
+        )
         return points, controls
 
 

@@ -22,29 +22,42 @@ def make_pc_flow_batch(
     known_frames: int = 1,
 ) -> PCFlowBatch:
     """Create shifted flow-matching data for future point displacements."""
-    if (
-        future_points.ndim != 5
-        or future_points.shape[2] != 1
-        or future_points.shape[-1] != 3
-    ):
-        raise ValueError("future_points must have shape (B, F, 1, N, 3)")
-    if init_pc.shape == (
-        future_points.shape[0],
-        known_frames,
-        1,
-        future_points.shape[3],
-        3,
-    ):
-        source_points = init_pc[:, :1]
-    elif known_frames == 1 and init_pc.shape == (
-        future_points.shape[0],
-        1,
-        future_points.shape[3],
-        3,
-    ):
+    if not isinstance(known_frames, int) or isinstance(known_frames, bool):
+        raise ValueError(
+            "known_frames must be 1 for 48 future frames or 4 for 45 future frames"
+        )
+    if known_frames == 1:
+        if (
+            future_points.ndim != 5
+            or future_points.shape[1:3] != (48, 1)
+            or future_points.shape[-1] != 3
+        ):
+            raise ValueError("future_points must have shape (B, 48, 1, N, 3)")
+        if init_pc.shape != (future_points.shape[0], 1, future_points.shape[3], 3):
+            raise ValueError("init_pc must have shape (B, 1, N, 3)")
         source_points = init_pc.unsqueeze(1)
+    elif known_frames == 4:
+        if (
+            future_points.ndim != 5
+            or future_points.shape[1:3] != (45, 1)
+            or future_points.shape[-1] != 3
+        ):
+            raise ValueError(
+                "known_frames must be 4 for 45 future frames with shape (B, 45, 1, N, 3)"
+            )
+        if init_pc.shape != (
+            future_points.shape[0],
+            4,
+            1,
+            future_points.shape[3],
+            3,
+        ):
+            raise ValueError("init_pc must have shape (B, 4, 1, N, 3)")
+        source_points = init_pc[:, :1]
     else:
-        raise ValueError("init_pc must have shape (B, K, 1, N, 3)")
+        raise ValueError(
+            "known_frames must be 1 for 48 future frames or 4 for 45 future frames"
+        )
     if time_shift <= 0 or num_train_timesteps <= 0:
         raise ValueError("time_shift and num_train_timesteps must be positive")
 

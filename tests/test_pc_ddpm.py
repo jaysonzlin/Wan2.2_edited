@@ -1,3 +1,4 @@
+import pytest
 import torch
 
 from training.pc_ddpm import make_pc_ddpm_batch
@@ -36,3 +37,21 @@ def test_ddpm_batch_uses_zero_times_for_four_clean_history_frames():
         batch.frame_times[:, 4:],
         batch.timesteps[:, None].expand(-1, 45).to(future.dtype),
     )
+
+
+@pytest.mark.parametrize(
+    "future_frames, known_frames",
+    [(48, 4), (45, 1), (45, 2), (45, 5), (48, True)],
+)
+def test_ddpm_batch_rejects_unsupported_temporal_layouts(
+    future_frames, known_frames
+):
+    future = torch.zeros(1, future_frames, 1, 2, 3)
+
+    with pytest.raises(ValueError):
+        make_pc_ddpm_batch(
+            future,
+            FakeDDPMScheduler(),
+            torch.Generator().manual_seed(0),
+            known_frames=known_frames,
+        )

@@ -255,6 +255,108 @@ def test_history_model_broadcasts_utonia_features_to_all_49_temporal_tokens():
     )
 
 
+def test_history_model_encodes_clean_frames_in_temporal_order():
+    model = make_tiny_model(
+        objective_type="ddpm", conditioning="history", history_frames=4
+    )
+    captured = {}
+    handle = model.input_encoder.register_forward_pre_hook(
+        lambda _module, inputs: captured.setdefault("coordinates", inputs[0].detach().clone())
+    )
+    history = torch.stack(
+        [torch.full((1, 1, 8, 3), value) for value in (10.0, 20.0, 30.0, 40.0)],
+        dim=1,
+    )
+    future = torch.full((1, 45, 1, 8, 3), 50.0)
+    try:
+        model(future, torch.tensor([[0.0] * 4 + [500.0] * 45]), history)
+    finally:
+        handle.remove()
+
+    encoded = captured["coordinates"].reshape(1, 49, 8, 3)
+    assert torch.equal(encoded[:, :4], history.squeeze(2))
+    assert torch.equal(encoded[:, 4:], future.squeeze(2))
+
+
+def test_history_model_requires_zero_timestamps_for_all_clean_frames():
+    model = make_tiny_model(
+        objective_type="ddpm", conditioning="history", history_frames=4
+    )
+
+    with pytest.raises(ValueError, match="known history frame times must be zero"):
+        model(
+            torch.zeros(1, 45, 1, 8, 3),
+            torch.tensor([[0.0, 0.0, 1.0, 0.0] + [500.0] * 45]),
+            torch.zeros(1, 4, 1, 8, 3),
+        )
+
+
+def test_history_ddpm_uses_clean_time_prefix_and_frame_zero_output_anchor():
+    model = make_tiny_model(
+        objective_type="ddpm", conditioning="history", history_frames=4
+    )
+    torch.nn.init.zeros_(model.output_head.projection.weight)
+    torch.nn.init.zeros_(model.output_head.projection.bias)
+    captured = {}
+    handle = model.time_embedding.register_forward_pre_hook(
+        lambda _module, inputs: captured.setdefault("times", inputs[0].detach().clone())
+    )
+    history = torch.full((1, 4, 1, 8, 3), 12.0)
+    history[:, :1] = 9.0
+    try:
+        output = model(
+            torch.zeros(1, 45, 1, 8, 3),
+            torch.tensor([[0.0] * 4 + [500.0] * 45]),
+            history,
+        )
+    finally:
+        handle.remove()
+
+    assert torch.equal(captured["times"][:, :4], torch.zeros(1, 4))
+    assert torch.equal(captured["times"][:, 4:], torch.full((1, 45), 500.0))
+    assert torch.equal(output, torch.full_like(output, 9.0))
+
+
+def test_default_velocity_model_keeps_velocity_modules_and_control_state_api():
+    model = make_tiny_model(objective_type="ddpm")
+    noisy = torch.zeros(1, 48, 1, 8, 3)
+    times = torch.full((1, 49), 500.0)
+    initial = torch.zeros(1, 1, 8, 3)
+    linear = torch.zeros(1, 1, 3)
+    angular = torch.zeros(1, 1, 3)
+
+    points, controls, temb = model.encode_states(noisy, times, initial, linear, angular)
+
+    assert model.conditioning == "velocity"
+    assert model.history_frames == 1
+    assert model.n_future_frames == 48
+    assert isinstance(model.linear_velocity_encoder, torch.nn.Linear)
+    assert isinstance(model.angular_velocity_encoder, torch.nn.Linear)
+    assert points.shape == (1, 49, 8, 64)
+    assert controls.shape == (1, 49, 2, 64)
+    assert temb.shape == (1, 49, 64)
+
+
+def test_history_spatial_attention_receives_only_point_tokens():
+    model = make_tiny_model(
+        objective_type="ddpm", conditioning="history", history_frames=4
+    )
+    captured = {}
+    handle = model.blocks[0].spatial_attention.register_forward_pre_hook(
+        lambda _module, inputs: captured.setdefault("tokens", inputs[0].detach().clone())
+    )
+    try:
+        model(
+            torch.zeros(1, 45, 1, 8, 3),
+            torch.tensor([[0.0] * 4 + [500.0] * 45]),
+            torch.zeros(1, 4, 1, 8, 3),
+        )
+    finally:
+        handle.remove()
+
+    assert captured["tokens"].shape == (49, 8, 64)
+
+
 @pytest.mark.parametrize(
     "features, message",
     [

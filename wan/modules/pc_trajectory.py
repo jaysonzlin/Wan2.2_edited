@@ -134,7 +134,7 @@ class PCTrajectoryModel(nn.Module):
         initial_linear_velocity: torch.Tensor | None = None,
         initial_angular_velocity: torch.Tensor | None = None,
         utonia_features: torch.Tensor | None = None,
-    ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+    ) -> tuple[torch.Tensor, torch.Tensor | None, torch.Tensor]:
         """Encode a trajectory into point/control states for externally interleaved blocks."""
         batch = noisy_future_state.shape[0]
         expected = (batch, self.n_future_frames, 1, self.n_points, 3)
@@ -149,6 +149,11 @@ class PCTrajectoryModel(nn.Module):
             raise ValueError(f"init_pc must have shape {expected_known_shape}")
         if frame_times.shape != (batch, self.history_frames + self.n_future_frames):
             raise ValueError("frame_times must have shape (B, 49)")
+        if self.conditioning == "history" and not torch.equal(
+            frame_times[:, : self.history_frames],
+            torch.zeros_like(frame_times[:, : self.history_frames]),
+        ):
+            raise ValueError("known history frame times must be zero")
         if self.objective_type == "flow" and not torch.equal(
             frame_times[:, 0], torch.zeros_like(frame_times[:, 0])
         ):
@@ -223,14 +228,7 @@ class PCTrajectoryModel(nn.Module):
                 -1, self.history_frames + self.n_future_frames, -1, -1
             )
         else:
-            controls = torch.zeros(
-                batch,
-                self.history_frames + self.n_future_frames,
-                2,
-                self.latent_dim,
-                device=points.device,
-                dtype=points.dtype,
-            )
+            controls = None
         temb = self.time_embedding(frame_times).to(dtype=points.dtype)
         return points, controls, temb
 

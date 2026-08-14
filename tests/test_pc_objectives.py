@@ -1,3 +1,4 @@
+import pytest
 import torch
 
 from training.pc_objectives import make_pc_flow_batch
@@ -52,3 +53,25 @@ def test_flow_batch_uses_zero_times_for_four_known_history_frames():
     assert batch.velocity_target.shape == future.shape
     assert torch.equal(batch.frame_times[:, :4], torch.zeros(1, 4))
     assert torch.all(batch.frame_times[:, 4:] > 0)
+
+
+@pytest.mark.parametrize(
+    "future_frames, known_frames",
+    [(48, 4), (45, 1), (45, 2), (45, 5), (48, True)],
+)
+def test_flow_batch_rejects_unsupported_temporal_layouts(
+    future_frames, known_frames
+):
+    future = torch.zeros(1, future_frames, 1, 2, 3)
+    known = 4 if known_frames == 4 else 1
+    source = torch.zeros(1, known, 1, 2, 3)
+
+    with pytest.raises(ValueError):
+        make_pc_flow_batch(
+            future,
+            source,
+            torch.Generator().manual_seed(0),
+            5.0,
+            1000,
+            known_frames=known_frames,
+        )
