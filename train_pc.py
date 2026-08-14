@@ -128,15 +128,25 @@ def build_pc_training_dataset(
 ):
     """Create the baseline dataset or precompute the Utonia-backed variant."""
     data = config["data"]
+    model = config["model"]
+    dataset_kwargs = (
+        {"history_frames": model["history_frames"]}
+        if model.get("conditioning", "velocity") == "history"
+        else {}
+    )
     if not config["model"].get("utonia_enabled", False):
         object_id = data.get("object_id")
         if object_id is not None:
-            return dataset_factory(data["dataset_root"], object_id=object_id), None
-        return dataset_factory(data["dataset_root"]), None
+            return dataset_factory(
+                data["dataset_root"], object_id=object_id, **dataset_kwargs
+            ), None
+        return dataset_factory(data["dataset_root"], **dataset_kwargs), None
 
     object_id = data["object_id"]
     cache_root = data["utonia_cache_root"]
-    source_dataset = dataset_factory(data["dataset_root"], object_id=object_id)
+    source_dataset = dataset_factory(
+        data["dataset_root"], object_id=object_id, **dataset_kwargs
+    )
     extractor = extractor_factory(cache_root)
     try:
         feature_dim = cache_preparer(source_dataset.source_paths, cache_root, extractor)
@@ -146,8 +156,168 @@ def build_pc_training_dataset(
         data["dataset_root"],
         object_id=object_id,
         utonia_cache_root=cache_root,
+        **dataset_kwargs,
     )
     return dataset, feature_dim
+
+
+def build_pc_training_model(config: dict, utonia_feature_dim, *, model_factory):
+    """Build the configured trajectory model without changing velocity defaults."""
+    model_config = config["model"]
+    kwargs = {
+        "n_points": config["data"]["num_points"],
+        "n_future_frames": 48,
+        "latent_dim": model_config["latent_dim"],
+        "n_layers": model_config["n_layers"],
+        "num_heads": model_config["num_heads"],
+        "point_embed": model_config["point_embed"],
+        "objective_type": config["objective"]["type"],
+        "utonia_feature_dim": utonia_feature_dim,
+    }
+    if model_config.get("conditioning", "velocity") == "history":
+        kwargs.update(
+            conditioning="history", history_frames=model_config["history_frames"]
+        )
+    return model_factory(**kwargs)
+
+
+def compute_pc_training_prediction(
+    batch,
+    model,
+    objective,
+    noise_scheduler,
+    generator,
+    device,
+    conditioning,
+    *,
+    flow_batch_factory,
+    ddpm_batch_factory,
+):
+    """Build one objective batch and invoke the matching conditioning API."""
+    future = batch["points_tgt"].to(device)
+    history_mode = conditioning == "history"
+    known_points = (
+        batch["points_history"].to(device)
+        if history_mode
+        else batch["points_src"].to(device)
+    )
+    if objective["type"] == "flow":
+        if history_mode:
+            target_batch = flow_batch_factory(
+                future,
+                known_points,
+                generator,
+                objective["time_shift"],
+                objective["num_train_timesteps"],
+                known_frames=known_points.shape[1],
+            )
+        else:
+            target_batch = flow_batch_factory(
+                future,
+                known_points,
+                generator,
+                objective["time_shift"],
+                objective["num_train_timesteps"],
+            )
+        target = target_batch.velocity_target
+    else:
+        if history_mode:
+            target_batch = ddpm_batch_factory(
+                future,
+                noise_scheduler,
+                generator,
+                known_frames=known_points.shape[1],
+            )
+        else:
+            target_batch = ddpm_batch_factory(future, noise_scheduler, generator)
+        target = target_batch.target
+
+    utonia_features = batch.get("utonia_features")
+    if utonia_features is not None:
+        utonia_features = utonia_features.to(device)
+    if history_mode:
+        prediction = model(
+            target_batch.model_input,
+            target_batch.frame_times,
+            known_points,
+            utonia_features=utonia_features,
+        )
+    else:
+        prediction = model(
+            target_batch.model_input,
+            target_batch.frame_times,
+            known_points,
+            batch["initial_linear_velocity"].to(device),
+            batch["initial_angular_velocity"].to(device),
+            utonia_features=utonia_features,
+        )
+    return prediction, target
+
+
+def build_pc_sampling_pipeline(
+    model,
+    scheduler,
+    objective_type,
+    conditioning,
+    *,
+    time_shift,
+    flow_pipeline_factory,
+    history_flow_pipeline_factory,
+    ddim_pipeline_factory,
+    history_ddim_pipeline_factory,
+):
+    """Select the sampling API matching the objective and conditioning mode."""
+    history_mode = conditioning == "history"
+    if objective_type == "flow":
+        pipeline_factory = (
+            history_flow_pipeline_factory if history_mode else flow_pipeline_factory
+        )
+        return pipeline_factory(model, scheduler, time_shift=time_shift)
+    pipeline_factory = (
+        history_ddim_pipeline_factory if history_mode else ddim_pipeline_factory
+    )
+    return pipeline_factory(model, scheduler)
+
+
+def sample_pc_visualization(
+    pipeline,
+    batch,
+    conditioning,
+    device,
+    num_inference_steps,
+    generator,
+):
+    """Sample and assemble the complete known-plus-future trajectory."""
+    import torch
+
+    history_mode = conditioning == "history"
+    if history_mode:
+        known_points = batch["points_history"]
+        predicted_future = pipeline(
+            known_points,
+            device,
+            num_inference_steps,
+            generator,
+            utonia_features=batch.get("utonia_features"),
+        )
+    else:
+        known_points = batch["points_src"].unsqueeze(1)
+        predicted_future = pipeline(
+            batch["points_src"],
+            batch["initial_linear_velocity"],
+            batch["initial_angular_velocity"],
+            device,
+            num_inference_steps,
+            generator,
+            utonia_features=batch.get("utonia_features"),
+        )
+    predicted = torch.cat(
+        (known_points.to(device), predicted_future), dim=1
+    ).squeeze(0).cpu()
+    ground_truth = torch.cat(
+        (known_points, batch["points_tgt"]), dim=1
+    ).squeeze(0).cpu()
+    return predicted, ground_truth
 
 
 def main(config=None) -> None:
@@ -171,7 +341,12 @@ def main(config=None) -> None:
         prepare_utonia_feature_cache,
     )
     from wan.modules.pc_trajectory import PCTrajectoryModel
-    from wan.pc_pipeline import PCDDIMPipeline, PCFlowPipeline
+    from wan.pc_pipeline import (
+        PCDDIMPipeline,
+        PCFlowPipeline,
+        PCHistoryDDIMPipeline,
+        PCHistoryFlowPipeline,
+    )
     from wan.utils.fm_solvers_unipc import FlowUniPCMultistepScheduler
 
     output_dir = Path(config["output_dir"])
@@ -194,7 +369,10 @@ def main(config=None) -> None:
     loader = DataLoader(dataset, batch_size=config["train_batch_size"], shuffle=True, num_workers=config["dataloader_num_workers"])
     model_config = config["model"]
     objective = config["objective"]
-    model = PCTrajectoryModel(n_points=config["data"]["num_points"], n_future_frames=48, latent_dim=model_config["latent_dim"], n_layers=model_config["n_layers"], num_heads=model_config["num_heads"], point_embed=model_config["point_embed"], objective_type=objective["type"], utonia_feature_dim=utonia_feature_dim)
+    conditioning = model_config.get("conditioning", "velocity")
+    model = build_pc_training_model(
+        config, utonia_feature_dim, model_factory=PCTrajectoryModel
+    )
     noise_scheduler = create_pc_noise_scheduler(objective)
     optimizer = torch.optim.AdamW(model.parameters(), lr=config["learning_rate"], betas=(config["adam_beta1"], config["adam_beta2"]), weight_decay=config["adam_weight_decay"], eps=config["adam_epsilon"])
     scheduler = create_lr_scheduler(
@@ -228,17 +406,17 @@ def main(config=None) -> None:
                     if isinstance(value, torch.Tensor)
                 }
             with accelerator.accumulate(model):
-                source = batch["points_src"].to(accelerator.device)
-                if objective["type"] == "flow":
-                    target_batch = make_pc_flow_batch(batch["points_tgt"].to(accelerator.device), source, generator, objective["time_shift"], objective["num_train_timesteps"])
-                    target = target_batch.velocity_target
-                else:
-                    target_batch = make_pc_ddpm_batch(batch["points_tgt"].to(accelerator.device), noise_scheduler, generator)
-                    target = target_batch.target
-                utonia_features = batch.get("utonia_features")
-                if utonia_features is not None:
-                    utonia_features = utonia_features.to(accelerator.device)
-                prediction = model(target_batch.model_input, target_batch.frame_times, source, batch["initial_linear_velocity"].to(accelerator.device), batch["initial_angular_velocity"].to(accelerator.device), utonia_features=utonia_features)
+                prediction, target = compute_pc_training_prediction(
+                    batch,
+                    model,
+                    objective,
+                    noise_scheduler,
+                    generator,
+                    accelerator.device,
+                    conditioning,
+                    flow_batch_factory=make_pc_flow_batch,
+                    ddpm_batch_factory=make_pc_ddpm_batch,
+                )
                 loss = mse_loss(prediction, target)
                 accelerator.backward(loss)
                 if accelerator.sync_gradients:
@@ -270,29 +448,39 @@ def main(config=None) -> None:
             unwrapped_model = accelerator.unwrap_model(model)
             was_training = unwrapped_model.training
             unwrapped_model.eval()
-            pipeline = (
-                PCFlowPipeline(unwrapped_model, FlowUniPCMultistepScheduler(num_train_timesteps=objective["num_train_timesteps"], solver_order=config["sampling"]["solver_order"], prediction_type="flow_prediction", shift=1, use_dynamic_shifting=False), time_shift=objective["time_shift"])
-                if objective["type"] == "flow"
-                else PCDDIMPipeline(unwrapped_model, DDIMScheduler.from_config(noise_scheduler.config))
+            if objective["type"] == "flow":
+                flow_scheduler = FlowUniPCMultistepScheduler(
+                    num_train_timesteps=objective["num_train_timesteps"],
+                    solver_order=config["sampling"]["solver_order"],
+                    prediction_type="flow_prediction",
+                    shift=1,
+                    use_dynamic_shifting=False,
+                )
+                sampling_scheduler = flow_scheduler
+            else:
+                sampling_scheduler = DDIMScheduler.from_config(noise_scheduler.config)
+            pipeline = build_pc_sampling_pipeline(
+                unwrapped_model,
+                sampling_scheduler,
+                objective["type"],
+                conditioning,
+                time_shift=objective.get("time_shift"),
+                flow_pipeline_factory=PCFlowPipeline,
+                history_flow_pipeline_factory=PCHistoryFlowPipeline,
+                ddim_pipeline_factory=PCDDIMPipeline,
+                history_ddim_pipeline_factory=PCHistoryDDIMPipeline,
             )
-            predicted_future = pipeline(
-                visualization_batch["points_src"],
-                visualization_batch["initial_linear_velocity"],
-                visualization_batch["initial_angular_velocity"],
+            predicted, ground_truth = sample_pc_visualization(
+                pipeline,
+                visualization_batch,
+                conditioning,
                 accelerator.device,
                 config["sampling"]["num_inference_steps"],
                 torch.Generator(device=accelerator.device).manual_seed(config["seed"]),
-                utonia_features=visualization_batch.get("utonia_features"),
             )
-            predicted = torch.cat(
-                (visualization_batch["points_src"].unsqueeze(1).to(accelerator.device), predicted_future), dim=1
-            ).squeeze(0).cpu().numpy()
-            ground_truth = torch.cat(
-                (visualization_batch["points_src"].unsqueeze(1), visualization_batch["points_tgt"]), dim=1
-            ).squeeze(0).numpy()
             save_pointcloud_comparison_mp4(
-                predicted,
-                ground_truth,
+                predicted.numpy(),
+                ground_truth.numpy(),
                 visualization_path(output_dir, config["vis_dir"], epoch),
                 config["visualization"]["fps"],
             )

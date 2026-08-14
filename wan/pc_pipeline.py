@@ -100,3 +100,103 @@ class PCDDIMPipeline:
             )
             sample = self.scheduler.step(prediction, timestep, sample, generator=generator).prev_sample
         return sample
+
+
+class PCHistoryFlowPipeline:
+    """Integrate future flow predictions conditioned on clean PC history."""
+
+    def __init__(self, model, scheduler, time_shift: float):
+        if time_shift <= 0:
+            raise ValueError("time_shift must be positive")
+        self.model = model
+        self.scheduler = scheduler
+        self.time_shift = time_shift
+
+    @torch.no_grad()
+    def __call__(
+        self,
+        points_history: torch.Tensor,
+        device: str | torch.device,
+        num_inference_steps: int,
+        generator: torch.Generator | None = None,
+        utonia_features: torch.Tensor | None = None,
+    ) -> torch.Tensor:
+        device = torch.device(device)
+        points_history = points_history.to(device)
+        if utonia_features is not None:
+            utonia_features = utonia_features.to(device)
+        batch_size, history_frames, _, n_points, _ = points_history.shape
+        sample = torch.randn(
+            (batch_size, self.model.n_future_frames, 1, n_points, 3),
+            device=device,
+            dtype=points_history.dtype,
+            generator=generator,
+        )
+        self.scheduler.set_timesteps(
+            num_inference_steps, device=device, shift=self.time_shift
+        )
+        for timestep in self.scheduler.timesteps:
+            frame_times = torch.full(
+                (batch_size, history_frames + self.model.n_future_frames),
+                timestep.item(),
+                device=device,
+                dtype=sample.dtype,
+            )
+            frame_times[:, :history_frames] = 0
+            flow = self.model(
+                sample,
+                frame_times,
+                points_history,
+                utonia_features=utonia_features,
+            )
+            sample = self.scheduler.step(
+                flow, timestep, sample, return_dict=True, generator=generator
+            ).prev_sample
+        return sample + points_history[:, :1]
+
+
+class PCHistoryDDIMPipeline:
+    """Sample absolute future positions conditioned on clean PC history."""
+
+    def __init__(self, model, scheduler):
+        self.model, self.scheduler = model, scheduler
+
+    @torch.no_grad()
+    def __call__(
+        self,
+        points_history: torch.Tensor,
+        device: str | torch.device,
+        num_inference_steps: int,
+        generator: torch.Generator | None = None,
+        utonia_features: torch.Tensor | None = None,
+    ) -> torch.Tensor:
+        device = torch.device(device)
+        points_history = points_history.to(device)
+        if utonia_features is not None:
+            utonia_features = utonia_features.to(device)
+        batch_size, history_frames, _, n_points, _ = points_history.shape
+        sample = torch.randn(
+            (batch_size, self.model.n_future_frames, 1, n_points, 3),
+            device=device,
+            dtype=points_history.dtype,
+            generator=generator,
+        )
+        self.scheduler.set_timesteps(num_inference_steps, device=device)
+        for timestep in self.scheduler.timesteps:
+            frame_times = torch.full(
+                (batch_size, history_frames + self.model.n_future_frames),
+                timestep.item(),
+                device=device,
+                dtype=sample.dtype,
+            )
+            frame_times[:, :history_frames] = 0
+            prediction = self.model(
+                sample,
+                frame_times,
+                points_history,
+                utonia_features=utonia_features,
+            )
+            sample = self.scheduler.step(
+                prediction, timestep, sample, generator=generator
+            ).prev_sample
+        return sample
