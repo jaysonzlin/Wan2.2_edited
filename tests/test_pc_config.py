@@ -67,6 +67,18 @@ def test_pc_config_accepts_four_frame_history_conditioning(tmp_path):
     assert load_pc_config(path, [])["model"]["history_frames"] == 4
 
 
+def test_pc_config_rejects_flow_objective_for_history_conditioning(tmp_path):
+    path = tmp_path / "config.yaml"
+    path.write_text(
+        valid_config_text()
+        .replace("objective:\n", "  conditioning: history\n  history_frames: 4\nobjective:\n")
+        .replace("  type: ddpm", "  type: flow")
+    )
+
+    with pytest.raises(ValueError, match="history conditioning requires objective.type 'ddpm'"):
+        load_pc_config(path, [])
+
+
 @pytest.mark.parametrize(
     ("conditioning_addition", "message"),
     [

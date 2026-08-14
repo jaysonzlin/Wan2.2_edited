@@ -72,7 +72,10 @@ def make_tiny_model(
     utonia_feature_dim=None,
     conditioning="velocity",
     history_frames=1,
+    n_future_frames=48,
 ):
+    if conditioning == "history" and n_future_frames == 48:
+        n_future_frames = 45
     conditioning_kwargs = {}
     if conditioning != "velocity" or history_frames != 1:
         conditioning_kwargs = {
@@ -81,7 +84,7 @@ def make_tiny_model(
         }
     return PCTrajectoryModel(
         n_points=8,
-        n_future_frames=48,
+        n_future_frames=n_future_frames,
         latent_dim=64,
         n_layers=1,
         num_heads=1,
@@ -283,6 +286,8 @@ def test_history_model_predicts_45_future_frames_from_four_clean_history_frames(
         torch.randn(2, 45, 1, 8, 3),
         torch.tensor([[0.0] * 4 + [500.0] * 45] * 2),
         torch.randn(2, 4, 1, 8, 3),
+        None,
+        None,
     )
 
     assert output.shape == (2, 45, 1, 8, 3)
@@ -305,6 +310,8 @@ def test_history_model_broadcasts_utonia_features_to_all_49_temporal_tokens():
             torch.randn(2, 45, 1, 8, 3),
             torch.tensor([[0.0] * 4 + [500.0] * 45] * 2),
             torch.randn(2, 4, 1, 8, 3),
+            None,
+            None,
             utonia_features=features,
         )
     finally:
@@ -332,7 +339,7 @@ def test_history_model_encodes_clean_frames_in_temporal_order():
     )
     future = torch.full((1, 45, 1, 8, 3), 50.0)
     try:
-        model(future, torch.tensor([[0.0] * 4 + [500.0] * 45]), history)
+        model(future, torch.tensor([[0.0] * 4 + [500.0] * 45]), history, None, None)
     finally:
         handle.remove()
 
@@ -351,6 +358,8 @@ def test_history_model_requires_zero_timestamps_for_all_clean_frames():
             torch.zeros(1, 45, 1, 8, 3),
             torch.tensor([[0.0, 0.0, 1.0, 0.0] + [500.0] * 45]),
             torch.zeros(1, 4, 1, 8, 3),
+            None,
+            None,
         )
 
 
@@ -371,6 +380,8 @@ def test_history_ddpm_uses_clean_time_prefix_and_frame_zero_output_anchor():
             torch.zeros(1, 45, 1, 8, 3),
             torch.tensor([[0.0] * 4 + [500.0] * 45]),
             history,
+            None,
+            None,
         )
     finally:
         handle.remove()
@@ -426,11 +437,42 @@ def test_history_spatial_attention_receives_only_point_tokens():
             torch.zeros(1, 45, 1, 8, 3),
             torch.tensor([[0.0] * 4 + [500.0] * 45]),
             torch.zeros(1, 4, 1, 8, 3),
+            None,
+            None,
         )
     finally:
         handle.remove()
 
     assert captured["tokens"].shape == (49, 8, 64)
+
+
+def test_history_model_requires_the_config_derived_45_frame_horizon():
+    with pytest.raises(ValueError, match="n_future_frames must be 45"):
+        make_tiny_model(
+            objective_type="ddpm",
+            conditioning="history",
+            history_frames=4,
+            n_future_frames=44,
+        )
+
+
+def test_history_model_rejects_flow_objective():
+    with pytest.raises(ValueError, match="history conditioning requires objective_type 'ddpm'"):
+        make_tiny_model(
+            objective_type="flow", conditioning="history", history_frames=4
+        )
+
+
+def test_velocity_forward_requires_legacy_velocity_arguments():
+    model = make_tiny_model(objective_type="ddpm")
+    noisy = torch.zeros(1, 48, 1, 8, 3)
+    times = torch.full((1, 49), 500.0)
+    initial = torch.zeros(1, 1, 8, 3)
+
+    with pytest.raises(TypeError):
+        model(noisy, times, initial)
+    with pytest.raises(TypeError):
+        model.encode_states(noisy, times, initial)
 
 
 @pytest.mark.parametrize(

@@ -19,49 +19,16 @@ def make_pc_flow_batch(
     generator: torch.Generator,
     time_shift: float,
     num_train_timesteps: int,
-    known_frames: int = 1,
 ) -> PCFlowBatch:
     """Create shifted flow-matching data for future point displacements."""
-    if not isinstance(known_frames, int) or isinstance(known_frames, bool):
-        raise ValueError(
-            "known_frames must be 1 for 48 future frames or 4 for 45 future frames"
-        )
-    if known_frames == 1:
-        if (
-            future_points.ndim != 5
-            or future_points.shape[1:3] != (48, 1)
-            or future_points.shape[-1] != 3
-        ):
-            raise ValueError("future_points must have shape (B, 48, 1, N, 3)")
-        if init_pc.shape != (future_points.shape[0], 1, future_points.shape[3], 3):
-            raise ValueError("init_pc must have shape (B, 1, N, 3)")
-        source_points = init_pc.unsqueeze(1)
-    elif known_frames == 4:
-        if (
-            future_points.ndim != 5
-            or future_points.shape[1:3] != (45, 1)
-            or future_points.shape[-1] != 3
-        ):
-            raise ValueError(
-                "known_frames must be 4 for 45 future frames with shape (B, 45, 1, N, 3)"
-            )
-        if init_pc.shape != (
-            future_points.shape[0],
-            4,
-            1,
-            future_points.shape[3],
-            3,
-        ):
-            raise ValueError("init_pc must have shape (B, 4, 1, N, 3)")
-        source_points = init_pc[:, :1]
-    else:
-        raise ValueError(
-            "known_frames must be 1 for 48 future frames or 4 for 45 future frames"
-        )
+    if future_points.ndim != 5 or future_points.shape[1:3] != (48, 1) or future_points.shape[-1] != 3:
+        raise ValueError("future_points must have shape (B, 48, 1, N, 3)")
+    if init_pc.shape != (future_points.shape[0], 1, future_points.shape[3], 3):
+        raise ValueError("init_pc must have shape (B, 1, N, 3)")
     if time_shift <= 0 or num_train_timesteps <= 0:
         raise ValueError("time_shift and num_train_timesteps must be positive")
 
-    displacements = future_points - source_points
+    displacements = future_points - init_pc.unsqueeze(1)
     uniform_times = torch.rand(
         (future_points.shape[0],),
         device=future_points.device,
@@ -79,8 +46,8 @@ def make_pc_flow_batch(
     model_input = (1 - interpolation) * displacements + interpolation * noise
     frame_times = torch.cat(
         (
-            torch.zeros_like(times[:, None]).expand(-1, known_frames),
-            times[:, None].expand(-1, future_points.shape[1]),
+            torch.zeros_like(times[:, None]),
+            times[:, None].expand(-1, 48),
         ),
         dim=1,
     ).mul(num_train_timesteps)

@@ -62,6 +62,10 @@ class PCTrajectoryModel(nn.Module):
             or history_frames != 4
         ):
             raise ValueError("history_frames must be 4 when conditioning is 'history'")
+        if conditioning == "history" and objective_type != "ddpm":
+            raise ValueError("history conditioning requires objective_type 'ddpm'")
+        if conditioning == "history" and n_future_frames != 45:
+            raise ValueError("n_future_frames must be 45 when conditioning is 'history'")
         if conditioning == "velocity" and history_frames != 1:
             raise ValueError("history_frames must be 1 when conditioning is 'velocity'")
         if latent_dim % 64:
@@ -77,9 +81,7 @@ class PCTrajectoryModel(nn.Module):
         self.conditioning = conditioning
         self.history_frames = history_frames
         self.n_points = n_points
-        self.n_future_frames = (
-            49 - history_frames if conditioning == "history" else n_future_frames
-        )
+        self.n_future_frames = n_future_frames
         self.latent_dim = latent_dim
         self.utonia_feature_dim = utonia_feature_dim
         self.input_encoder = PointEmbed(latent_dim)
@@ -110,8 +112,8 @@ class PCTrajectoryModel(nn.Module):
         noisy_future_state: torch.Tensor,
         frame_times: torch.Tensor,
         init_pc: torch.Tensor,
-        initial_linear_velocity: torch.Tensor | None = None,
-        initial_angular_velocity: torch.Tensor | None = None,
+        initial_linear_velocity: torch.Tensor | None,
+        initial_angular_velocity: torch.Tensor | None,
         utonia_features: torch.Tensor | None = None,
     ) -> torch.Tensor:
         points, controls, temb = self.encode_states(
@@ -131,8 +133,8 @@ class PCTrajectoryModel(nn.Module):
         noisy_future_state: torch.Tensor,
         frame_times: torch.Tensor,
         init_pc: torch.Tensor,
-        initial_linear_velocity: torch.Tensor | None = None,
-        initial_angular_velocity: torch.Tensor | None = None,
+        initial_linear_velocity: torch.Tensor | None,
+        initial_angular_velocity: torch.Tensor | None,
         utonia_features: torch.Tensor | None = None,
     ) -> tuple[torch.Tensor, torch.Tensor | None, torch.Tensor]:
         """Encode a trajectory into point/control states for externally interleaved blocks."""

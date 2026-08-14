@@ -386,7 +386,7 @@ def _tiny_model_config(conditioning=None):
     if conditioning is not None:
         model.update(conditioning=conditioning, history_frames=4)
     return {
-        "data": {"num_points": 8},
+        "data": {"num_frames": 49, "num_points": 8},
         "model": model,
         "objective": {"type": "ddpm"},
     }
@@ -407,7 +407,7 @@ def test_build_pc_training_model_configures_four_frame_history():
     assert calls == [
         {
             "n_points": 8,
-            "n_future_frames": 48,
+            "n_future_frames": 45,
             "latent_dim": 64,
             "n_layers": 1,
             "num_heads": 1,
@@ -474,8 +474,18 @@ def test_history_training_prediction_uses_history_without_velocity_tensors():
             {"model_input": model_input, "frame_times": frame_times, "target": target},
         )()
 
-    def history_model(noisy, times, known, *, utonia_features=None):
-        model_calls.append((noisy, times, known, utonia_features))
+    def history_model(
+        noisy,
+        times,
+        known,
+        initial_linear,
+        initial_angular,
+        *,
+        utonia_features=None,
+    ):
+        model_calls.append(
+            (noisy, times, known, initial_linear, initial_angular, utonia_features)
+        )
         return torch.full_like(noisy, 6.0)
 
     generator = torch.Generator().manual_seed(0)
@@ -504,7 +514,8 @@ def test_history_training_prediction_uses_history_without_velocity_tensors():
     assert model_calls[0][0] is model_input
     assert model_calls[0][1] is frame_times
     assert torch.equal(model_calls[0][2], history)
-    assert model_calls[0][3] is features
+    assert model_calls[0][3:5] == (None, None)
+    assert model_calls[0][5] is features
 
 
 def test_velocity_training_prediction_preserves_positional_flow_calls():
@@ -662,7 +673,6 @@ def test_velocity_visualization_preserves_legacy_pipeline_call():
     ("objective_type", "conditioning", "expected_factory", "expected_kwargs"),
     [
         ("flow", "velocity", "flow", {"time_shift": 5.0}),
-        ("flow", "history", "history-flow", {"time_shift": 5.0}),
         ("ddpm", "velocity", "ddim", {}),
         ("ddpm", "history", "history-ddim", {}),
     ],
@@ -686,7 +696,6 @@ def test_sampling_pipeline_selection_matches_objective_and_conditioning(
         conditioning,
         time_shift=5.0,
         flow_pipeline_factory=factory("flow"),
-        history_flow_pipeline_factory=factory("history-flow"),
         ddim_pipeline_factory=factory("ddim"),
         history_ddim_pipeline_factory=factory("history-ddim"),
     )

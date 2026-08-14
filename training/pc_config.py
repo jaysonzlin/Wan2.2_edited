@@ -85,6 +85,8 @@ def validate_pc_config(config: dict) -> None:
             )
     if objective.get("type") not in {"flow", "ddpm"}:
         raise ValueError("objective.type must be 'flow' or 'ddpm'")
+    if conditioning == "history" and objective["type"] != "ddpm":
+        raise ValueError("history conditioning requires objective.type 'ddpm'")
     if not isinstance(objective.get("num_train_timesteps"), int) or objective["num_train_timesteps"] <= 0:
         raise ValueError("objective.num_train_timesteps must be positive")
     if not isinstance(objective.get("time_shift"), (int, float)) or objective["time_shift"] <= 0:

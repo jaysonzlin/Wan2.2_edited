@@ -175,8 +175,11 @@ def build_pc_training_model(config: dict, utonia_feature_dim, *, model_factory):
         "utonia_feature_dim": utonia_feature_dim,
     }
     if model_config.get("conditioning", "velocity") == "history":
+        history_frames = model_config["history_frames"]
         kwargs.update(
-            conditioning="history", history_frames=model_config["history_frames"]
+            conditioning="history",
+            history_frames=history_frames,
+            n_future_frames=config["data"]["num_frames"] - history_frames,
         )
     return model_factory(**kwargs)
 
@@ -201,35 +204,27 @@ def compute_pc_training_prediction(
         if history_mode
         else batch["points_src"].to(device)
     )
-    if objective["type"] == "flow":
-        if history_mode:
-            target_batch = flow_batch_factory(
-                future,
-                known_points,
-                generator,
-                objective["time_shift"],
-                objective["num_train_timesteps"],
-                known_frames=known_points.shape[1],
-            )
-        else:
-            target_batch = flow_batch_factory(
-                future,
-                known_points,
-                generator,
-                objective["time_shift"],
-                objective["num_train_timesteps"],
-            )
+    if history_mode:
+        if objective["type"] != "ddpm":
+            raise ValueError("history conditioning requires objective.type 'ddpm'")
+        target_batch = ddpm_batch_factory(
+            future,
+            noise_scheduler,
+            generator,
+            known_frames=known_points.shape[1],
+        )
+        target = target_batch.target
+    elif objective["type"] == "flow":
+        target_batch = flow_batch_factory(
+            future,
+            known_points,
+            generator,
+            objective["time_shift"],
+            objective["num_train_timesteps"],
+        )
         target = target_batch.velocity_target
     else:
-        if history_mode:
-            target_batch = ddpm_batch_factory(
-                future,
-                noise_scheduler,
-                generator,
-                known_frames=known_points.shape[1],
-            )
-        else:
-            target_batch = ddpm_batch_factory(future, noise_scheduler, generator)
+        target_batch = ddpm_batch_factory(future, noise_scheduler, generator)
         target = target_batch.target
 
     utonia_features = batch.get("utonia_features")
@@ -240,6 +235,8 @@ def compute_pc_training_prediction(
             target_batch.model_input,
             target_batch.frame_times,
             known_points,
+            None,
+            None,
             utonia_features=utonia_features,
         )
     else:
@@ -262,21 +259,18 @@ def build_pc_sampling_pipeline(
     *,
     time_shift,
     flow_pipeline_factory,
-    history_flow_pipeline_factory,
     ddim_pipeline_factory,
     history_ddim_pipeline_factory,
 ):
     """Select the sampling API matching the objective and conditioning mode."""
     history_mode = conditioning == "history"
+    if history_mode:
+        if objective_type != "ddpm":
+            raise ValueError("history conditioning requires objective.type 'ddpm'")
+        return history_ddim_pipeline_factory(model, scheduler)
     if objective_type == "flow":
-        pipeline_factory = (
-            history_flow_pipeline_factory if history_mode else flow_pipeline_factory
-        )
-        return pipeline_factory(model, scheduler, time_shift=time_shift)
-    pipeline_factory = (
-        history_ddim_pipeline_factory if history_mode else ddim_pipeline_factory
-    )
-    return pipeline_factory(model, scheduler)
+        return flow_pipeline_factory(model, scheduler, time_shift=time_shift)
+    return ddim_pipeline_factory(model, scheduler)
 
 
 def sample_pc_visualization(
@@ -345,7 +339,6 @@ def main(config=None) -> None:
         PCDDIMPipeline,
         PCFlowPipeline,
         PCHistoryDDIMPipeline,
-        PCHistoryFlowPipeline,
     )
     from wan.utils.fm_solvers_unipc import FlowUniPCMultistepScheduler
 
@@ -466,7 +459,6 @@ def main(config=None) -> None:
                 conditioning,
                 time_shift=objective.get("time_shift"),
                 flow_pipeline_factory=PCFlowPipeline,
-                history_flow_pipeline_factory=PCHistoryFlowPipeline,
                 ddim_pipeline_factory=PCDDIMPipeline,
                 history_ddim_pipeline_factory=PCHistoryDDIMPipeline,
             )
