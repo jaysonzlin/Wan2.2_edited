@@ -228,6 +228,19 @@ def test_utonia_config_is_loadable():
     assert config["data"]["object_id"] == "000"
 
 
+def test_utonia_history_config_loads_a_distinct_four_frame_experiment():
+    from training.pc_config import load_pc_config
+
+    config = load_pc_config("configs/train/config_pc_utonia_history_overfit.yaml", [])
+
+    assert config["output_dir"] == "./outputs/pc_trajectory_utonia_history_overfit"
+    assert config["tracker_project_name"] == "pc_trajectory_utonia_history_overfit"
+    assert config["resume_from_checkpoint"] is None
+    assert config["model"]["conditioning"] == "history"
+    assert config["model"]["history_frames"] == 4
+    assert config["model"]["utonia_enabled"] is True
+
+
 def test_build_pc_training_dataset_prepares_cache_before_cache_backed_dataset():
     calls = []
 
