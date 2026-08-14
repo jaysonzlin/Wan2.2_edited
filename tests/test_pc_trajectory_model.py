@@ -4,6 +4,69 @@ import torch
 from wan.modules.pc_trajectory import PCTrajectoryModel
 
 
+LEGACY_VELOCITY_STATE_DICT_LAYOUT = {
+    "input_encoder.basis": (3, 48),
+    "input_encoder.projection.weight": (64, 99),
+    "input_encoder.projection.bias": (64,),
+    "linear_velocity_encoder.weight": (64, 3),
+    "linear_velocity_encoder.bias": (64,),
+    "angular_velocity_encoder.weight": (64, 3),
+    "angular_velocity_encoder.bias": (64,),
+    "time_embedding.linear_1.weight": (64, 64),
+    "time_embedding.linear_1.bias": (64,),
+    "time_embedding.linear_2.weight": (64, 64),
+    "time_embedding.linear_2.bias": (64,),
+    "blocks.0.norm1.linear.weight": (384, 64),
+    "blocks.0.norm1.linear.bias": (384,),
+    "blocks.0.norm1.norm.weight": (64,),
+    "blocks.0.norm1.norm.bias": (64,),
+    "blocks.0.spatial_attention.to_q.weight": (64, 64),
+    "blocks.0.spatial_attention.to_q.bias": (64,),
+    "blocks.0.spatial_attention.to_k.weight": (64, 64),
+    "blocks.0.spatial_attention.to_k.bias": (64,),
+    "blocks.0.spatial_attention.to_v.weight": (64, 64),
+    "blocks.0.spatial_attention.to_v.bias": (64,),
+    "blocks.0.spatial_attention.to_out.weight": (64, 64),
+    "blocks.0.spatial_attention.to_out.bias": (64,),
+    "blocks.0.spatial_attention.q_norm.weight": (64,),
+    "blocks.0.spatial_attention.q_norm.bias": (64,),
+    "blocks.0.spatial_attention.k_norm.weight": (64,),
+    "blocks.0.spatial_attention.k_norm.bias": (64,),
+    "blocks.0.norm2.linear.weight": (384, 64),
+    "blocks.0.norm2.linear.bias": (384,),
+    "blocks.0.norm2.norm.weight": (64,),
+    "blocks.0.norm2.norm.bias": (64,),
+    "blocks.0.mlp.0.weight": (256, 64),
+    "blocks.0.mlp.0.bias": (256,),
+    "blocks.0.mlp.2.weight": (64, 256),
+    "blocks.0.mlp.2.bias": (64,),
+    "blocks.0.temporal_norm.linear.weight": (128, 64),
+    "blocks.0.temporal_norm.linear.bias": (128,),
+    "blocks.0.temporal_norm.norm.weight": (64,),
+    "blocks.0.temporal_norm.norm.bias": (64,),
+    "blocks.0.temporal_attention.to_q.weight": (64, 64),
+    "blocks.0.temporal_attention.to_q.bias": (64,),
+    "blocks.0.temporal_attention.to_k.weight": (64, 64),
+    "blocks.0.temporal_attention.to_k.bias": (64,),
+    "blocks.0.temporal_attention.to_v.weight": (64, 64),
+    "blocks.0.temporal_attention.to_v.bias": (64,),
+    "blocks.0.temporal_attention.to_out.weight": (64, 64),
+    "blocks.0.temporal_attention.to_out.bias": (64,),
+    "blocks.0.temporal_attention.q_norm.weight": (64,),
+    "blocks.0.temporal_attention.q_norm.bias": (64,),
+    "blocks.0.temporal_attention.k_norm.weight": (64,),
+    "blocks.0.temporal_attention.k_norm.bias": (64,),
+    "output_head.norm_final.weight": (64,),
+    "output_head.norm_final.bias": (64,),
+    "output_head.norm_out.linear.weight": (128, 64),
+    "output_head.norm_out.linear.bias": (128,),
+    "output_head.norm_out.norm.weight": (64,),
+    "output_head.norm_out.norm.bias": (64,),
+    "output_head.projection.weight": (3, 64),
+    "output_head.projection.bias": (3,),
+}
+
+
 def make_tiny_model(
     objective_type="flow",
     utonia_feature_dim=None,
@@ -335,6 +398,19 @@ def test_default_velocity_model_keeps_velocity_modules_and_control_state_api():
     assert points.shape == (1, 49, 8, 64)
     assert controls.shape == (1, 49, 2, 64)
     assert temb.shape == (1, 49, 64)
+
+
+def test_default_velocity_model_strictly_loads_prechange_checkpoint_layout():
+    model = make_tiny_model(objective_type="ddpm")
+    legacy_state_dict = {
+        key: torch.zeros(shape)
+        for key, shape in LEGACY_VELOCITY_STATE_DICT_LAYOUT.items()
+    }
+
+    assert {
+        key: tuple(value.shape) for key, value in model.state_dict().items()
+    } == LEGACY_VELOCITY_STATE_DICT_LAYOUT
+    model.load_state_dict(legacy_state_dict, strict=True)
 
 
 def test_history_spatial_attention_receives_only_point_tokens():
