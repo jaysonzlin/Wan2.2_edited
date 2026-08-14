@@ -64,7 +64,12 @@ def validate_pc_config(config: dict) -> None:
         "history",
     }:
         raise ValueError("model.conditioning must be 'velocity' or 'history'")
-    if conditioning == "history" and model.get("history_frames") != 4:
+    history_frames = model.get("history_frames")
+    if conditioning == "history" and (
+        not isinstance(history_frames, int)
+        or isinstance(history_frames, bool)
+        or history_frames != 4
+    ):
         raise ValueError(
             "model.history_frames must be 4 when conditioning is 'history'"
         )

@@ -83,6 +83,10 @@ def test_pc_config_accepts_four_frame_history_conditioning(tmp_path):
             "model.history_frames must be 4 when conditioning is 'history'",
         ),
         (
+            "  conditioning: history\n  history_frames: 4.0\n",
+            "model.history_frames must be 4 when conditioning is 'history'",
+        ),
+        (
             "  conditioning: history\n  history_frames: four\n",
             "model.history_frames must be 4 when conditioning is 'history'",
         ),

@@ -54,3 +54,26 @@ present. The available `utonia-dev` environment provided h5py 3.16.0, PyTorch
 2.13.0, pytest 9.1.1, and PyYAML 6.0.3, and was used for the executable tests.
 The unavailable `black` module prevented a Black check; the changed code was
 manually kept in the repository's Black-compatible style.
+
+## Review fix: reject floating-point history frame counts
+
+The Task 1 review identified that YAML `history_frames: 4.0` compared equal
+to the required integer `4` and was accepted. The history validation now
+requires a non-boolean `int` whose value is exactly `4`.
+
+### Red
+
+```bash
+PYTHONPATH=. /Users/jaysonlin/miniconda3/envs/utonia-dev/bin/python -m pytest tests/test_pc_config.py -q
+```
+
+Before the fix: **1 failed, 28 passed** in 0.06s. The new `4.0` regression
+case failed because `ValueError` was not raised.
+
+### Green
+
+```bash
+PYTHONPATH=. /Users/jaysonlin/miniconda3/envs/utonia-dev/bin/python -m pytest tests/test_pc_config.py tests/test_pc_dataset.py -q
+```
+
+After the fix: **39 passed** in 0.59s.
