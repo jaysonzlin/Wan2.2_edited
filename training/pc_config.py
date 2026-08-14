@@ -58,6 +58,16 @@ def validate_pc_config(config: dict) -> None:
         raise ValueError(
             "model.transformer_block must be 'SpatialTemporalTransformerBlock'"
         )
+    conditioning = model.get("conditioning", "velocity")
+    if not isinstance(conditioning, str) or conditioning not in {
+        "velocity",
+        "history",
+    }:
+        raise ValueError("model.conditioning must be 'velocity' or 'history'")
+    if conditioning == "history" and model.get("history_frames") != 4:
+        raise ValueError(
+            "model.history_frames must be 4 when conditioning is 'history'"
+        )
     utonia_enabled = model.get("utonia_enabled")
     if utonia_enabled is not None and not isinstance(utonia_enabled, bool):
         raise ValueError("model.utonia_enabled must be a boolean")

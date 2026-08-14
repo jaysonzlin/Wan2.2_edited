@@ -7,10 +7,17 @@ from training.pc_dataset import PCTrajectoryDataset
 from training.utonia_features import prepare_utonia_feature_cache
 
 
-def write_pc_sample(path, shape=(49, 1, 2048, 3), rgb=None):
+def write_pc_sample(path, shape=(49, 1, 2048, 3), rgb=None, point_cloud=None):
     path.mkdir(parents=True)
     with h5py.File(path / "pc.hdf5", "w") as source:
-        source.create_dataset("point_cloud", data=np.zeros(shape, dtype=np.float32))
+        source.create_dataset(
+            "point_cloud",
+            data=(
+                np.zeros(shape, dtype=np.float32)
+                if point_cloud is None
+                else point_cloud
+            ),
+        )
         source.create_dataset(
             "initial_linear_velocity", data=np.zeros((1, 3), dtype=np.float32)
         )
@@ -29,6 +36,24 @@ def test_dataset_splits_a_valid_hdf5_clip(tmp_path):
     assert sample["points_src"].shape == (1, 2048, 3)
     assert sample["points_tgt"].shape == (48, 1, 2048, 3)
     assert sample["initial_angular_velocity"].shape == (1, 3)
+
+
+def test_dataset_splits_four_history_frames_from_a_49_frame_clip(tmp_path):
+    point_cloud = np.broadcast_to(
+        np.arange(49, dtype=np.float32).reshape(49, 1, 1, 1),
+        (49, 1, 2048, 3),
+    )
+    write_pc_sample(tmp_path / "sample_0", point_cloud=point_cloud)
+
+    sample = PCTrajectoryDataset(tmp_path, history_frames=4)[0]
+
+    assert sample["points_src"].shape == (1, 2048, 3)
+    assert sample["points_history"].shape == (4, 1, 2048, 3)
+    assert sample["points_tgt"].shape == (45, 1, 2048, 3)
+    assert torch.equal(
+        sample["points_history"][:, 0, 0, 0], torch.tensor([0, 1, 2, 3])
+    )
+    assert torch.equal(sample["points_tgt"][:, 0, 0, 0], torch.arange(4, 49))
 
 
 def test_dataset_rejects_wrong_point_shape(tmp_path):

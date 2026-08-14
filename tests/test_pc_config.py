@@ -42,6 +42,66 @@ def test_pc_config_accepts_baseline_without_utonia_fields(tmp_path):
     assert config["model"].get("utonia_enabled") is None
 
 
+@pytest.mark.parametrize("conditioning_addition", ["", "  conditioning: velocity\n"])
+def test_pc_config_accepts_default_and_explicit_velocity_conditioning(
+    tmp_path, conditioning_addition
+):
+    path = tmp_path / "config.yaml"
+    path.write_text(
+        valid_config_text().replace(
+            "objective:\n", conditioning_addition + "objective:\n"
+        )
+    )
+
+    assert load_pc_config(path, [])["objective"]["type"] == "ddpm"
+
+
+def test_pc_config_accepts_four_frame_history_conditioning(tmp_path):
+    path = tmp_path / "config.yaml"
+    path.write_text(
+        valid_config_text().replace(
+            "objective:\n", "  conditioning: history\n  history_frames: 4\nobjective:\n"
+        )
+    )
+
+    assert load_pc_config(path, [])["model"]["history_frames"] == 4
+
+
+@pytest.mark.parametrize(
+    ("conditioning_addition", "message"),
+    [
+        (
+            "  conditioning: acceleration\n",
+            "model.conditioning must be 'velocity' or 'history'",
+        ),
+        (
+            "  conditioning: history\n",
+            "model.history_frames must be 4 when conditioning is 'history'",
+        ),
+        (
+            "  conditioning: history\n  history_frames: 3\n",
+            "model.history_frames must be 4 when conditioning is 'history'",
+        ),
+        (
+            "  conditioning: history\n  history_frames: four\n",
+            "model.history_frames must be 4 when conditioning is 'history'",
+        ),
+    ],
+)
+def test_pc_config_rejects_invalid_history_conditioning_fields(
+    tmp_path, conditioning_addition, message
+):
+    path = tmp_path / "config.yaml"
+    path.write_text(
+        valid_config_text().replace(
+            "objective:\n", conditioning_addition + "objective:\n"
+        )
+    )
+
+    with pytest.raises(ValueError, match=message):
+        load_pc_config(path, [])
+
+
 @pytest.mark.parametrize(
     ("data_addition", "message"),
     [

@@ -18,6 +18,7 @@ class PCTrajectoryDataset(Dataset):
         dataset_root: str | Path,
         expected_frames: int = 49,
         expected_points: int = 2048,
+        history_frames: int = 1,
         *,
         object_id: str | None = None,
         utonia_cache_root: str | Path | None = None,
@@ -25,6 +26,7 @@ class PCTrajectoryDataset(Dataset):
         self.dataset_root = Path(dataset_root)
         self.expected_frames = expected_frames
         self.expected_points = expected_points
+        self.history_frames = history_frames
         self.object_id = object_id
         self.utonia_cache_root = (
             Path(utonia_cache_root) if utonia_cache_root is not None else None
@@ -60,11 +62,13 @@ class PCTrajectoryDataset(Dataset):
             angular_velocity = torch.from_numpy(source["initial_angular_velocity"][:]).float()
         sample = {
             "points_src": point_cloud[0],
-            "points_tgt": point_cloud[1:],
+            "points_tgt": point_cloud[self.history_frames :],
             "initial_linear_velocity": linear_velocity,
             "initial_angular_velocity": angular_velocity,
             "sample_id": self._sample_id(path),
         }
+        if self.history_frames > 1:
+            sample["points_history"] = point_cloud[: self.history_frames]
         if self.utonia_cache_root is not None:
             sample["utonia_features"] = load_cached_utonia_features(
                 self.utonia_cache_root, sample["sample_id"]
