@@ -251,8 +251,8 @@ def test_build_pc_training_dataset_prepares_cache_before_cache_backed_dataset():
         calls.append(("dataset", args, kwargs))
         return Dataset()
 
-    def extractor_factory(cache_root):
-        calls.append(("extractor", cache_root))
+    def extractor_factory(cache_root, training_seed):
+        calls.append(("extractor", cache_root, training_seed))
         return "extractor"
 
     def cache_preparer(sources, cache_root, extractor):
@@ -260,6 +260,7 @@ def test_build_pc_training_dataset_prepares_cache_before_cache_backed_dataset():
         return 17
 
     config = {
+        "seed": 42,
         "data": {
             "dataset_root": "input",
             "object_id": "000",
@@ -279,7 +280,7 @@ def test_build_pc_training_dataset_prepares_cache_before_cache_backed_dataset():
     assert feature_dim == 17
     assert calls == [
         ("dataset", ("input",), {"object_id": "000"}),
-        ("extractor", "utonia-cache"),
+        ("extractor", "utonia-cache", 42),
         (
             "prepare",
             {"sample_0/objects/000": Path("input/pc.hdf5")},
@@ -344,6 +345,7 @@ def test_build_pc_training_dataset_forwards_history_only_in_history_mode():
         return Dataset()
 
     config = {
+        "seed": 42,
         "data": {
             "dataset_root": "input",
             "object_id": "000",
@@ -359,7 +361,7 @@ def test_build_pc_training_dataset_forwards_history_only_in_history_mode():
     build_pc_training_dataset(
         config,
         dataset_factory=dataset_factory,
-        extractor_factory=lambda _root: "extractor",
+        extractor_factory=lambda _root, _seed: "extractor",
         cache_preparer=lambda *_args: 17,
     )
 

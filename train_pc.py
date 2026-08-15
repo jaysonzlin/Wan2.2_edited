@@ -147,7 +147,7 @@ def build_pc_training_dataset(
     source_dataset = dataset_factory(
         data["dataset_root"], object_id=object_id, **dataset_kwargs
     )
-    extractor = extractor_factory(cache_root)
+    extractor = extractor_factory(cache_root, config["seed"])
     try:
         feature_dim = cache_preparer(source_dataset.source_paths, cache_root, extractor)
     finally:

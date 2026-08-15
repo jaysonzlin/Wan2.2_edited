@@ -61,9 +61,11 @@ def test_extractor_uses_vendored_utonia(monkeypatch, tmp_path):
     monkeypatch.setattr(torch.cuda, "is_available", lambda: True)
     monkeypatch.setattr(wan, "utonia", fake_utonia, raising=False)
 
-    extractor = UtoniaFeatureExtractor(tmp_path)
+    extractor = UtoniaFeatureExtractor(tmp_path, training_seed=42)
 
     assert extractor.model.__class__ is FakeModel
+    assert extractor.training_seed == 42
+    assert extractor.preprocess_version.endswith("training-seed-42")
 
 
 @pytest.mark.parametrize(

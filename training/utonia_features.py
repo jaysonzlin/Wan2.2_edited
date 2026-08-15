@@ -221,11 +221,14 @@ def _numpy_seed(seed: int):
 class UtoniaFeatureExtractor:
     """Lazy CUDA-backed extractor using Utonia's official Hugging Face loader."""
 
-    preprocess_version = "utonia-default-normalize-coord-grid-sample-v1"
-
-    def __init__(self, cache_root: str | Path):
+    def __init__(self, cache_root: str | Path, training_seed: int):
         if not torch.cuda.is_available():
             raise RuntimeError("CUDA is required to prepare Utonia feature cache")
+        self.training_seed = int(training_seed)
+        self.preprocess_version = (
+            "utonia-default-normalize-coord-grid-sample-v1-"
+            f"training-seed-{self.training_seed}"
+        )
         try:
             from wan import utonia
         except ImportError as error:  # pragma: no cover - depends on local CUDA setup
@@ -256,13 +259,12 @@ class UtoniaFeatureExtractor:
 
     @torch.no_grad()
     def __call__(self, coordinates: np.ndarray, rgb: np.ndarray) -> torch.Tensor:
-        seed = int(_source_fingerprint(coordinates, rgb)[:16], 16) % (2**32)
         point = {
             "coord": coordinates.copy(),
             "color": prepare_utonia_color(rgb),
             "normal": np.zeros_like(coordinates),
         }
-        with _numpy_seed(seed):
+        with _numpy_seed(self.training_seed):
             point = self.transform(point)
         point = {
             key: value.cuda(non_blocking=True) if isinstance(value, torch.Tensor) else value
