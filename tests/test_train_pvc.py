@@ -1,6 +1,10 @@
 import torch
 
-from train_pvc import build_pvc_training_dataset, compute_pvc_training_prediction
+from train_pvc import (
+    build_pvc_training_dataset,
+    compute_pvc_training_prediction,
+    sample_pvc_visualization,
+)
 
 
 def test_pvc_dataset_builder_prepares_both_caches_in_feature_width_order():
@@ -47,3 +51,29 @@ def test_pvc_training_prediction_forwards_every_condition():
     assert torch.equal(prediction, torch.full_like(future, 2))
     assert target is future
     assert seen[0][2:] == (history, views, mask, features, view_features)
+
+
+def test_pvc_visualization_prepends_history_and_forwards_view_conditions():
+    history = torch.randn(1, 4, 1, 2, 3)
+    future = torch.randn(1, 45, 1, 2, 3)
+    views = torch.randn(1, 49, 2, 3)
+    mask = torch.ones(1, 49, 2, dtype=torch.bool)
+    features = torch.randn(1, 2, 5)
+    view_features = torch.randn(1, 49, 2, 5)
+    calls = []
+
+    def pipeline(*args):
+        calls.append(args)
+        return torch.zeros_like(future)
+
+    predicted, ground_truth = sample_pvc_visualization(
+        pipeline,
+        {"points_history": history, "points_tgt": future, "point_views": views,
+         "point_view_mask": mask, "utonia_features": features,
+         "point_view_utonia_features": view_features},
+        "cpu", 5, torch.Generator(),
+    )
+
+    assert predicted.shape == ground_truth.shape == (49, 1, 2, 3)
+    assert torch.equal(predicted[:4], history.squeeze(0))
+    assert calls[0][1:3] == (views, mask)
