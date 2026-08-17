@@ -74,8 +74,13 @@ class PhysCtrlAttention(nn.Module):
         self.q_norm = nn.LayerNorm(self.head_dim, eps=1e-6)
         self.k_norm = nn.LayerNorm(self.head_dim, eps=1e-6)
 
-    def forward(self, tokens: torch.Tensor) -> torch.Tensor:
+    def forward(
+        self, tokens: torch.Tensor, key_mask: torch.Tensor | None = None
+    ) -> torch.Tensor:
         batch, length, _ = tokens.shape
+        if key_mask is not None:
+            if key_mask.dtype != torch.bool or key_mask.shape != (batch, length):
+                raise ValueError("key_mask must have shape (B, L) and dtype bool")
 
         def split_heads(projection: nn.Linear) -> torch.Tensor:
             return projection(tokens).view(
@@ -87,7 +92,12 @@ class PhysCtrlAttention(nn.Module):
             split_heads(self.to_k),
             split_heads(self.to_v),
         )
-        output = F.scaled_dot_product_attention(self.q_norm(q), self.k_norm(k), v)
+        attention_mask = (
+            key_mask[:, None, None, :] if key_mask is not None else None
+        )
+        output = F.scaled_dot_product_attention(
+            self.q_norm(q), self.k_norm(k), v, attn_mask=attention_mask
+        )
         return self.to_out(output.transpose(1, 2).reshape(batch, length, -1))
 
 
@@ -207,6 +217,56 @@ class PhysCtrlSpatialTemporalBlock(nn.Module):
             else None
         )
         return points, controls
+
+    def forward_with_point_views(
+        self,
+        points: torch.Tensor,
+        point_views: torch.Tensor,
+        point_view_mask: torch.Tensor,
+        temb: torch.Tensor,
+    ) -> tuple[torch.Tensor, torch.Tensor]:
+        """Update a persistent view stream spatially without temporal mixing."""
+        batch, frames, count, dim = points.shape
+        if point_views.shape[:2] != (batch, frames) or point_views.shape[-1] != dim:
+            raise ValueError("point_views must have shape (B, F, V, D)")
+        view_count = point_views.shape[2]
+        if point_view_mask.dtype != torch.bool or point_view_mask.shape != (
+            batch,
+            frames,
+            view_count,
+        ):
+            raise ValueError("point_view_mask must have shape (B, F, V) and dtype bool")
+        if temb.shape != (batch, frames, dim):
+            raise ValueError("temb must have shape (B, F, D)")
+        flat_points = points.reshape(batch * frames, count, dim)
+        flat_views = point_views.reshape(batch * frames, view_count, dim)
+        flat_mask = point_view_mask.reshape(batch * frames, view_count)
+        flat_temb = temb.reshape(batch * frames, dim)
+        joined = torch.cat((flat_points, flat_views), dim=1)
+        key_mask = torch.cat(
+            (
+                torch.ones((batch * frames, count), device=points.device, dtype=torch.bool),
+                flat_mask,
+            ),
+            dim=1,
+        )
+        mod_joined, _, gate, _ = self.norm1(joined, None, flat_temb)
+        joined = joined + gate * self.spatial_attention(mod_joined, key_mask=key_mask)
+        mod_joined, _, gate, _ = self.norm2(joined, None, flat_temb)
+        joined = joined + gate * self.mlp(mod_joined)
+        flat_points, flat_views = joined.split((count, view_count), dim=1)
+        flat_views = flat_views.masked_fill(~flat_mask[..., None], 0)
+
+        tracks = flat_points.reshape(batch, frames, count, dim).permute(0, 2, 1, 3)
+        tracks = tracks.reshape(batch * count, frames, dim)
+        track_temb = temb[:, None].expand(batch, count, frames, dim)
+        track_temb = track_temb.reshape(batch * count, frames, dim)
+        tracks = tracks + self.temporal_attention(
+            self.temporal_norm(tracks, track_temb)
+        )
+        output_points = tracks.reshape(batch, count, frames, dim).permute(0, 2, 1, 3)
+        output_views = flat_views.reshape(batch, frames, view_count, dim)
+        return output_points, output_views
 
 
 class PhysCtrlOutputHead(nn.Module):

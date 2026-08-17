@@ -163,3 +163,41 @@ def test_zero_gates_and_zero_temporal_attention_preserve_both_streams():
 
     torch.testing.assert_close(output_points, points)
     torch.testing.assert_close(output_controls, controls)
+
+
+def test_attention_mask_excludes_invalid_key_values():
+    attention = PhysCtrlAttention(dim=4, heads=2)
+    set_identity_qkvo(attention)
+    valid = torch.tensor([[[1.0, 3.0, 2.0, 6.0], [2.0, 4.0, 4.0, 8.0]]])
+    baseline = attention(valid)
+    joined = torch.cat((valid, torch.full((1, 1, 4), 1e6)), dim=1)
+
+    masked = attention(joined, key_mask=torch.tensor([[True, True, False]]))
+
+    torch.testing.assert_close(masked[:, :2], baseline)
+
+
+def test_view_tokens_only_enter_spatial_branch_and_invalid_values_are_zeroed():
+    block = PhysCtrlSpatialTemporalBlock(dim=4, heads=2)
+    points = torch.randn(1, 2, 3, 4)
+    views = torch.randn(1, 2, 2, 4)
+    mask = torch.tensor([[[True, False], [True, False]]])
+    temb = torch.randn(1, 2, 4)
+    spatial_shapes, temporal_shapes = [], []
+    spatial_hook = block.spatial_attention.register_forward_pre_hook(
+        lambda _module, inputs: spatial_shapes.append(inputs[0].shape)
+    )
+    temporal_hook = block.temporal_attention.register_forward_pre_hook(
+        lambda _module, inputs: temporal_shapes.append(inputs[0].shape)
+    )
+    try:
+        output_points, output_views = block.forward_with_point_views(points, views, mask, temb)
+    finally:
+        spatial_hook.remove()
+        temporal_hook.remove()
+
+    assert spatial_shapes == [torch.Size((2, 5, 4))]
+    assert temporal_shapes == [torch.Size((3, 2, 4))]
+    assert output_points.shape == points.shape
+    assert output_views.shape == views.shape
+    assert not output_views[:, :, 1].any()
