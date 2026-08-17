@@ -74,6 +74,7 @@ class PVCTrajectoryDataset(PCTrajectoryDataset):
         object_id: str,
         utonia_cache_root: str | Path | None = None,
         point_view_utonia_cache_root: str | Path | None = None,
+        point_view_feature_dim: int | None = None,
     ):
         super().__init__(
             dataset_root,
@@ -86,6 +87,9 @@ class PVCTrajectoryDataset(PCTrajectoryDataset):
             if point_view_utonia_cache_root is not None
             else None
         )
+        self.point_view_feature_dim = point_view_feature_dim
+        if (self.point_view_utonia_cache_root is None) != (point_view_feature_dim is None):
+            raise ValueError("point-view cache root and feature dimension must be provided together")
         self.point_view_source_paths = {
             self._sample_id(path): point_view_paths(path, object_id=object_id)
             for path in self.samples
@@ -100,4 +104,15 @@ class PVCTrajectoryDataset(PCTrajectoryDataset):
         views, mask = pack_point_views(paths)
         sample["point_views"] = views
         sample["point_view_mask"] = mask
+        if self.point_view_utonia_cache_root is not None:
+            from training.pvc_utonia_features import load_cached_point_view_utonia_features
+
+            features, cached_mask = load_cached_point_view_utonia_features(
+                self.point_view_utonia_cache_root,
+                sample["sample_id"],
+                feature_dim=self.point_view_feature_dim,
+            )
+            if not torch.equal(mask, cached_mask):
+                raise ValueError("point-view cache mask does not match source point views")
+            sample["point_view_utonia_features"] = features
         return sample
