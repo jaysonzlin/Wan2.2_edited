@@ -74,6 +74,21 @@ def pvc_loss_terms(
     return point_mse, centroid_mse, point_mse + position_loss_weight * centroid_mse
 
 
+def pvc_training_metrics(
+    loss: torch.Tensor,
+    point_mse: torch.Tensor,
+    centroid_mse: torch.Tensor,
+    learning_rate: float,
+) -> dict[str, float]:
+    """Format PVC loss terms for accelerator metric logging."""
+    return {
+        "train/loss": float(loss.detach().item()),
+        "train/mse": float(point_mse.detach().item()),
+        "train/centroid_mse": float(centroid_mse.detach().item()),
+        "train/learning_rate": learning_rate,
+    }
+
+
 def build_pvc_lr_scheduler(schedule_name, optimizer, warmup_steps, max_train_steps, *, cosine_factory, constant_factory):
     """Create PVC's scheduler using the same factory contract as train_pc."""
     return create_lr_scheduler(
@@ -167,7 +182,7 @@ def main(config=None):
                 visualization_batch = {key: value[:1].detach().cpu() for key, value in batch.items() if isinstance(value, torch.Tensor)}
             with accelerator.accumulate(model):
                 prediction, target = compute_pvc_training_prediction(batch, model, scheduler, generator, accelerator.device, ddpm_batch_factory=make_pc_ddpm_batch)
-                _, centroid_mse, loss = pvc_loss_terms(
+                point_mse, centroid_mse, loss = pvc_loss_terms(
                     prediction,
                     target,
                     position_loss_weight=position_loss_weight,
@@ -179,11 +194,12 @@ def main(config=None):
                 step += 1
                 progress_bar.update(1); progress_bar.set_postfix(loss=f"{loss.detach().item():.4f}", lr=f"{lr_scheduler.get_last_lr()[0]:.2e}")
                 accelerator.log(
-                    {
-                        "train/loss": loss.detach().item(),
-                        "train/centroid_mse": centroid_mse.detach().item(),
-                        "train/learning_rate": lr_scheduler.get_last_lr()[0],
-                    },
+                    pvc_training_metrics(
+                        loss,
+                        point_mse,
+                        centroid_mse,
+                        lr_scheduler.get_last_lr()[0],
+                    ),
                     step=step,
                 )
                 if step % config["checkpointing_steps"] == 0:
