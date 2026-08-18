@@ -1,5 +1,6 @@
 """Configuration loading and validation for the dedicated PVC experiment."""
 
+import math
 from pathlib import Path
 
 from training.pc_config import load_pc_config
@@ -27,6 +28,14 @@ def validate_pvc_config(config: dict) -> None:
         raise ValueError("PVC model.point_view_gate_mode must be 'shared' or 'separate'")
     if objective.get("type") != "ddpm":
         raise ValueError("PVC requires objective.type 'ddpm'")
+    position_loss_weight = objective.get("position_loss_weight", 1.0)
+    if (
+        not isinstance(position_loss_weight, (int, float))
+        or isinstance(position_loss_weight, bool)
+        or not math.isfinite(position_loss_weight)
+        or position_loss_weight < 0
+    ):
+        raise ValueError("PVC objective.position_loss_weight must be non-negative")
     for field in ("object_id", "utonia_cache_root", "point_view_utonia_cache_root"):
         value = data.get(field)
         if not isinstance(value, str) or not value.strip():

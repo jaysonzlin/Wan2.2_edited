@@ -4,6 +4,9 @@ import argparse
 from pathlib import Path
 from typing import Any, Callable
 
+import torch
+
+from training.pc_objectives import mse_loss
 from training.pvc_config import load_pvc_config
 from training.schedules import create_lr_scheduler
 
@@ -44,6 +47,24 @@ def compute_pvc_training_prediction(batch, model, noise_scheduler, generator, de
         batch["utonia_features"].to(device), batch["point_view_utonia_features"].to(device),
     )
     return prediction, objective_batch.target
+
+
+def mean_position_error(prediction: torch.Tensor, target: torch.Tensor) -> torch.Tensor:
+    """Return mean Euclidean error between predicted and target object centroids."""
+    if prediction.shape != target.shape:
+        raise ValueError("prediction and target must have identical shapes")
+    predicted_centers = prediction.mean(dim=-2)
+    target_centers = target.mean(dim=-2)
+    return torch.linalg.vector_norm(predicted_centers - target_centers, dim=-1).mean()
+
+
+def pvc_loss(
+    prediction: torch.Tensor, target: torch.Tensor, *, position_loss_weight: float
+) -> torch.Tensor:
+    """Combine per-point reconstruction loss with weighted centroid position error."""
+    return mse_loss(prediction, target) + position_loss_weight * mean_position_error(
+        prediction, target
+    )
 
 
 def build_pvc_lr_scheduler(schedule_name, optimizer, warmup_steps, max_train_steps, *, cosine_factory, constant_factory):
@@ -91,7 +112,6 @@ def main(config=None):
     if config is None:
         args = parse_args()
         config = load_pvc_config(args.config, args.overrides)
-    import torch
     import yaml
     from accelerate import Accelerator
     from accelerate.utils import set_seed
@@ -99,7 +119,6 @@ def main(config=None):
     from diffusers import DDIMScheduler
     from transformers import get_constant_schedule_with_warmup, get_cosine_schedule_with_warmup
     from training.pc_ddpm import make_pc_ddpm_batch
-    from training.pc_objectives import mse_loss
     from training.pvc_dataset import PVCTrajectoryDataset
     from training.pvc_utonia_features import prepare_point_view_utonia_feature_cache
     from training.utonia_features import UtoniaFeatureExtractor, prepare_utonia_feature_cache
@@ -131,6 +150,7 @@ def main(config=None):
     )
     model, optimizer, loader, lr_scheduler = accelerator.prepare(model, optimizer, loader, lr_scheduler)
     generator = torch.Generator(device=accelerator.device).manual_seed(config["seed"])
+    position_loss_weight = config["objective"].get("position_loss_weight", 1.0)
     resumed = load_pc_checkpoint_with_fallback(accelerator, output_dir, config.get("resume_from_checkpoint")); step = int(resumed.name.removeprefix("checkpoint-")) if resumed else 0
     progress_bar = create_progress_bar(config["max_train_steps"], step, accelerator.is_main_process)
     for epoch in range(first_unfinished_epoch(step), config["num_train_epochs"] + 1):
@@ -140,12 +160,16 @@ def main(config=None):
                 visualization_batch = {key: value[:1].detach().cpu() for key, value in batch.items() if isinstance(value, torch.Tensor)}
             with accelerator.accumulate(model):
                 prediction, target = compute_pvc_training_prediction(batch, model, scheduler, generator, accelerator.device, ddpm_batch_factory=make_pc_ddpm_batch)
-                accelerator.backward(mse_loss(prediction, target))
+                loss = pvc_loss(
+                    prediction,
+                    target,
+                    position_loss_weight=position_loss_weight,
+                )
+                accelerator.backward(loss)
                 if accelerator.sync_gradients: accelerator.clip_grad_norm_(model.parameters(), config["max_grad_norm"])
                 optimizer.step(); lr_scheduler.step(); optimizer.zero_grad(set_to_none=True)
             if accelerator.sync_gradients:
                 step += 1
-                loss = mse_loss(prediction, target)
                 progress_bar.update(1); progress_bar.set_postfix(loss=f"{loss.detach().item():.4f}", lr=f"{lr_scheduler.get_last_lr()[0]:.2e}")
                 accelerator.log({"train/loss": loss.detach().item(), "train/learning_rate": lr_scheduler.get_last_lr()[0]}, step=step)
                 if step % config["checkpointing_steps"] == 0:

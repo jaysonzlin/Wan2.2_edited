@@ -28,6 +28,7 @@ objective:
   num_train_timesteps: 1000
   beta_schedule: linear
   time_shift: 5.0
+  position_loss_weight: 1.0
 lr_scheduler: constant
 checkpoints_total_limit: 2
 """
@@ -51,6 +52,18 @@ def test_pvc_config_accepts_fixed_history_ddpm_contract(tmp_path):
         (("type: ddpm", "type: flow"), "history conditioning requires objective.type 'ddpm'"),
         (("utonia_enabled: true", "utonia_enabled: false"), "PVC requires model.utonia_enabled true"),
         (("point_view_gate_mode: shared", "point_view_gate_mode: unsupported"), "point_view_gate_mode"),
+        (
+            ("position_loss_weight: 1.0", "position_loss_weight: -0.1"),
+            "position_loss_weight",
+        ),
+        (
+            ("position_loss_weight: 1.0", "position_loss_weight: .nan"),
+            "position_loss_weight",
+        ),
+        (
+            ("position_loss_weight: 1.0", "position_loss_weight: .inf"),
+            "position_loss_weight",
+        ),
     ],
 )
 def test_pvc_config_rejects_non_pvc_model_contract(tmp_path, replacement, message):

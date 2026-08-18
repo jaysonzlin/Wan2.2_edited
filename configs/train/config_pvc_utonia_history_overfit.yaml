@@ -45,6 +45,7 @@ objective:
   num_train_timesteps: 1000
   beta_schedule: linear
   time_shift: 5.0
+  position_loss_weight: 1.0
 sampling:
   num_inference_steps: 50
   solver_order: 3
