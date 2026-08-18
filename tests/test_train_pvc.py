@@ -6,7 +6,7 @@ from train_pvc import (
     build_pvc_training_model,
     build_pvc_training_dataset,
     compute_pvc_training_prediction,
-    mean_position_error,
+    mean_position_mse,
     pvc_loss,
     sample_pvc_visualization,
 )
@@ -35,15 +35,15 @@ def test_pvc_training_model_defaults_to_shared_view_gate_mode():
     assert seen["point_view_gate_mode"] == "shared"
 
 
-def test_pvc_loss_adds_weighted_object_centroid_position_error():
+def test_pvc_loss_adds_weighted_object_centroid_mse():
     prediction = torch.zeros(1, 2, 1, 2, 3)
     target = torch.tensor([3.0, 4.0, 0.0]).reshape(1, 1, 1, 1, 3).expand(
         1, 2, 1, 2, 3
     )
 
-    assert mean_position_error(prediction, target).item() == 5.0
+    assert mean_position_mse(prediction, target).item() == pytest.approx(25.0 / 3.0)
     assert pvc_loss(prediction, target, position_loss_weight=0.5).item() == pytest.approx(
-        65.0 / 6.0
+        12.5
     )
 
 

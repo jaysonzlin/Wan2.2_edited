@@ -49,20 +49,20 @@ def compute_pvc_training_prediction(batch, model, noise_scheduler, generator, de
     return prediction, objective_batch.target
 
 
-def mean_position_error(prediction: torch.Tensor, target: torch.Tensor) -> torch.Tensor:
-    """Return mean Euclidean error between predicted and target object centroids."""
+def mean_position_mse(prediction: torch.Tensor, target: torch.Tensor) -> torch.Tensor:
+    """Return mean-squared error between predicted and target object centroids."""
     if prediction.shape != target.shape:
         raise ValueError("prediction and target must have identical shapes")
     predicted_centers = prediction.mean(dim=-2)
     target_centers = target.mean(dim=-2)
-    return torch.linalg.vector_norm(predicted_centers - target_centers, dim=-1).mean()
+    return (predicted_centers - target_centers).square().mean()
 
 
 def pvc_loss(
     prediction: torch.Tensor, target: torch.Tensor, *, position_loss_weight: float
 ) -> torch.Tensor:
-    """Combine per-point reconstruction loss with weighted centroid position error."""
-    return mse_loss(prediction, target) + position_loss_weight * mean_position_error(
+    """Combine per-point reconstruction loss with weighted centroid MSE."""
+    return mse_loss(prediction, target) + position_loss_weight * mean_position_mse(
         prediction, target
     )
 
