@@ -8,6 +8,7 @@ from train_pvc import (
     compute_pvc_training_prediction,
     mean_position_mse,
     pvc_loss,
+    pvc_loss_terms,
     sample_pvc_visualization,
 )
 
@@ -45,6 +46,20 @@ def test_pvc_loss_adds_weighted_object_centroid_mse():
     assert pvc_loss(prediction, target, position_loss_weight=0.5).item() == pytest.approx(
         12.5
     )
+
+
+def test_pvc_loss_terms_exposes_raw_centroid_mse_for_logging():
+    prediction = torch.zeros(1, 1, 1, 2, 3)
+    target = torch.tensor([3.0, 4.0, 0.0]).reshape(1, 1, 1, 1, 3).expand_as(
+        prediction
+    )
+
+    _, centroid_mse, total = pvc_loss_terms(
+        prediction, target, position_loss_weight=0.5
+    )
+
+    assert centroid_mse.item() == pytest.approx(25.0 / 3.0)
+    assert total.item() == pytest.approx(12.5)
 
 
 def test_pvc_lr_scheduler_provides_required_constant_factory():

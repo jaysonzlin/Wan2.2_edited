@@ -62,9 +62,16 @@ def pvc_loss(
     prediction: torch.Tensor, target: torch.Tensor, *, position_loss_weight: float
 ) -> torch.Tensor:
     """Combine per-point reconstruction loss with weighted centroid MSE."""
-    return mse_loss(prediction, target) + position_loss_weight * mean_position_mse(
-        prediction, target
-    )
+    return pvc_loss_terms(prediction, target, position_loss_weight=position_loss_weight)[2]
+
+
+def pvc_loss_terms(
+    prediction: torch.Tensor, target: torch.Tensor, *, position_loss_weight: float
+) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+    """Return per-point MSE, centroid MSE, and their weighted total."""
+    point_mse = mse_loss(prediction, target)
+    centroid_mse = mean_position_mse(prediction, target)
+    return point_mse, centroid_mse, point_mse + position_loss_weight * centroid_mse
 
 
 def build_pvc_lr_scheduler(schedule_name, optimizer, warmup_steps, max_train_steps, *, cosine_factory, constant_factory):
@@ -160,7 +167,7 @@ def main(config=None):
                 visualization_batch = {key: value[:1].detach().cpu() for key, value in batch.items() if isinstance(value, torch.Tensor)}
             with accelerator.accumulate(model):
                 prediction, target = compute_pvc_training_prediction(batch, model, scheduler, generator, accelerator.device, ddpm_batch_factory=make_pc_ddpm_batch)
-                loss = pvc_loss(
+                _, centroid_mse, loss = pvc_loss_terms(
                     prediction,
                     target,
                     position_loss_weight=position_loss_weight,
@@ -171,7 +178,14 @@ def main(config=None):
             if accelerator.sync_gradients:
                 step += 1
                 progress_bar.update(1); progress_bar.set_postfix(loss=f"{loss.detach().item():.4f}", lr=f"{lr_scheduler.get_last_lr()[0]:.2e}")
-                accelerator.log({"train/loss": loss.detach().item(), "train/learning_rate": lr_scheduler.get_last_lr()[0]}, step=step)
+                accelerator.log(
+                    {
+                        "train/loss": loss.detach().item(),
+                        "train/centroid_mse": centroid_mse.detach().item(),
+                        "train/learning_rate": lr_scheduler.get_last_lr()[0],
+                    },
+                    step=step,
+                )
                 if step % config["checkpointing_steps"] == 0:
                     accelerator.save_state(output_dir / f"checkpoint-{step}")
                     if accelerator.is_main_process: prune_pc_checkpoints(output_dir, config["checkpoints_total_limit"])
