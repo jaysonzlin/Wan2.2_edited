@@ -23,6 +23,8 @@ def validate_pvc_config(config: dict) -> None:
         raise ValueError("PVC requires model.history_frames 4")
     if model.get("utonia_enabled") is not True:
         raise ValueError("PVC requires model.utonia_enabled true")
+    if model.get("point_view_gate_mode", "shared") not in {"shared", "separate"}:
+        raise ValueError("PVC model.point_view_gate_mode must be 'shared' or 'separate'")
     if objective.get("type") != "ddpm":
         raise ValueError("PVC requires objective.type 'ddpm'")
     for field in ("object_id", "utonia_cache_root", "point_view_utonia_cache_root"):

@@ -102,12 +102,18 @@ class PhysCtrlAttention(nn.Module):
 
 
 class PhysCtrlLayerNormZero(nn.Module):
-    """PhysCtrl's separately gated point/control AdaLN-Zero variant."""
+    """PhysCtrl's separately gated point/control/view AdaLN-Zero variant."""
 
-    def __init__(self, dim: int):
+    def __init__(self, dim: int, *, point_view_gate_mode: str = "shared"):
         super().__init__()
+        if point_view_gate_mode not in {"shared", "separate"}:
+            raise ValueError("point_view_gate_mode must be 'shared' or 'separate'")
+        self.point_view_gate_mode = point_view_gate_mode
         self.act = nn.SiLU()
         self.linear = nn.Linear(dim, 6 * dim)
+        self.view_linear = (
+            nn.Linear(dim, 3 * dim) if point_view_gate_mode == "separate" else None
+        )
         self.norm = nn.LayerNorm(dim, eps=1e-5)
 
     def forward(
@@ -132,6 +138,30 @@ class PhysCtrlLayerNormZero(nn.Module):
         )
         return points, controls, gate[:, None], enc_gate[:, None]
 
+    def forward_with_point_views(
+        self,
+        points: torch.Tensor,
+        point_views: torch.Tensor,
+        temb: torch.Tensor,
+    ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
+        """Modulate point and view tokens, optionally with independent view terms."""
+        shift, scale, gate, _, _, _ = self.linear(self.act(temb)).chunk(6, dim=-1)
+        points = self.norm(points) * (1 + scale[:, None]) + shift[:, None]
+        if self.view_linear is None:
+            return (
+                points,
+                self.norm(point_views) * (1 + scale[:, None]) + shift[:, None],
+                gate[:, None],
+                gate[:, None],
+            )
+        view_shift, view_scale, view_gate = self.view_linear(self.act(temb)).chunk(
+            3, dim=-1
+        )
+        point_views = (
+            self.norm(point_views) * (1 + view_scale[:, None]) + view_shift[:, None]
+        )
+        return points, point_views, gate[:, None], view_gate[:, None]
+
 
 class PhysCtrlAdaLayerNorm(nn.Module):
     """CogVideoX AdaLayerNorm using a supplied learned timestep embedding."""
@@ -153,11 +183,17 @@ class PhysCtrlAdaLayerNorm(nn.Module):
 class PhysCtrlSpatialTemporalBlock(nn.Module):
     """The active PhysCtrl PC block without generic CogVideoX runtime plumbing."""
 
-    def __init__(self, dim: int, heads: int):
+    def __init__(
+        self, dim: int, heads: int, *, point_view_gate_mode: str = "shared"
+    ):
         super().__init__()
-        self.norm1 = PhysCtrlLayerNormZero(dim)
+        self.norm1 = PhysCtrlLayerNormZero(
+            dim, point_view_gate_mode=point_view_gate_mode
+        )
         self.spatial_attention = PhysCtrlAttention(dim, heads)
-        self.norm2 = PhysCtrlLayerNormZero(dim)
+        self.norm2 = PhysCtrlLayerNormZero(
+            dim, point_view_gate_mode=point_view_gate_mode
+        )
         self.mlp = nn.Sequential(
             nn.Linear(dim, 4 * dim),
             nn.GELU(approximate="tanh"),
@@ -242,19 +278,31 @@ class PhysCtrlSpatialTemporalBlock(nn.Module):
         flat_views = point_views.reshape(batch * frames, view_count, dim)
         flat_mask = point_view_mask.reshape(batch * frames, view_count)
         flat_temb = temb.reshape(batch * frames, dim)
-        joined = torch.cat((flat_points, flat_views), dim=1)
         key_mask = torch.cat(
             (
-                torch.ones((batch * frames, count), device=points.device, dtype=torch.bool),
+                torch.ones(
+                    (batch * frames, count),
+                    device=points.device,
+                    dtype=torch.bool,
+                ),
                 flat_mask,
             ),
             dim=1,
         )
-        mod_joined, _, gate, _ = self.norm1(joined, None, flat_temb)
-        joined = joined + gate * self.spatial_attention(mod_joined, key_mask=key_mask)
-        mod_joined, _, gate, _ = self.norm2(joined, None, flat_temb)
-        joined = joined + gate * self.mlp(mod_joined)
-        flat_points, flat_views = joined.split((count, view_count), dim=1)
+        mod_points, mod_views, point_gate, view_gate = (
+            self.norm1.forward_with_point_views(flat_points, flat_views, flat_temb)
+        )
+        attended = self.spatial_attention(
+            torch.cat((mod_points, mod_views), dim=1), key_mask=key_mask
+        )
+        flat_points = flat_points + point_gate * attended[:, :count]
+        flat_views = flat_views + view_gate * attended[:, count:]
+        mod_points, mod_views, point_gate, view_gate = (
+            self.norm2.forward_with_point_views(flat_points, flat_views, flat_temb)
+        )
+        ff_output = self.mlp(torch.cat((mod_points, mod_views), dim=1))
+        flat_points = flat_points + point_gate * ff_output[:, :count]
+        flat_views = flat_views + view_gate * ff_output[:, count:]
         flat_views = flat_views.masked_fill(~flat_mask[..., None], 0)
 
         tracks = flat_points.reshape(batch, frames, count, dim).permute(0, 2, 1, 3)

@@ -20,6 +20,7 @@ model:
   frame_cond: true
   transformer_block: SpatialTemporalTransformerBlock
   utonia_enabled: true
+  point_view_gate_mode: shared
   conditioning: history
   history_frames: 4
 objective:
@@ -39,6 +40,7 @@ def test_pvc_config_accepts_fixed_history_ddpm_contract(tmp_path):
     config = load_pvc_config(path, [])
 
     assert config["model"]["conditioning"] == "history"
+    assert config["model"]["point_view_gate_mode"] == "shared"
     assert config["data"]["point_view_utonia_cache_root"].endswith("feature_cache")
 
 
@@ -48,6 +50,7 @@ def test_pvc_config_accepts_fixed_history_ddpm_contract(tmp_path):
         (("conditioning: history", "conditioning: velocity"), "PVC requires model.conditioning 'history'"),
         (("type: ddpm", "type: flow"), "history conditioning requires objective.type 'ddpm'"),
         (("utonia_enabled: true", "utonia_enabled: false"), "PVC requires model.utonia_enabled true"),
+        (("point_view_gate_mode: shared", "point_view_gate_mode: unsupported"), "point_view_gate_mode"),
     ],
 )
 def test_pvc_config_rejects_non_pvc_model_contract(tmp_path, replacement, message):

@@ -94,10 +94,7 @@ class PCTrajectoryModel(nn.Module):
             self.linear_velocity_encoder = nn.Linear(3, latent_dim)
             self.angular_velocity_encoder = nn.Linear(3, latent_dim)
         self.time_embedding = PhysCtrlTimestepEmbedding(latent_dim)
-        self.blocks = nn.ModuleList(
-            PhysCtrlSpatialTemporalBlock(latent_dim, num_heads)
-            for _ in range(n_layers)
-        )
+        self.blocks = self._build_spatial_blocks(latent_dim, num_heads, n_layers)
         self.output_head = PhysCtrlOutputHead(latent_dim)
         self.register_buffer(
             "position_embedding",
@@ -105,6 +102,15 @@ class PCTrajectoryModel(nn.Module):
                 n_points, self.history_frames + self.n_future_frames, latent_dim
             ),
             persistent=False,
+        )
+
+    def _build_spatial_blocks(
+        self, latent_dim: int, num_heads: int, n_layers: int
+    ) -> nn.ModuleList:
+        """Build standard PC blocks without PVC-specific view modulation."""
+        return nn.ModuleList(
+            PhysCtrlSpatialTemporalBlock(latent_dim, num_heads)
+            for _ in range(n_layers)
         )
 
     def forward(

@@ -109,6 +109,18 @@ def test_model_returns_direct_future_flow_shape():
     assert output.shape == (2, 48, 1, 8, 3)
 
 
+def test_base_pc_model_does_not_expose_pvc_view_gate_mode():
+    with pytest.raises(TypeError, match="point_view_gate_mode"):
+        PCTrajectoryModel(
+            n_points=8,
+            n_future_frames=48,
+            latent_dim=64,
+            n_layers=1,
+            num_heads=1,
+            point_view_gate_mode="separate",
+        )
+
+
 def test_model_rejects_nonzero_source_time():
     model = make_tiny_model()
 

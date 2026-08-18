@@ -112,6 +112,37 @@ def test_layer_norm_zero_uses_distinct_point_and_control_modulation():
     torch.testing.assert_close(control_gate, torch.full_like(control_gate, 4.0))
 
 
+def test_layer_norm_zero_separate_mode_uses_distinct_view_modulation():
+    module = PhysCtrlLayerNormZero(4, point_view_gate_mode="separate")
+    with torch.no_grad():
+        module.linear.weight.zero_()
+        module.linear.bias.zero_()
+        module.linear.bias[:4].fill_(1.0)
+        module.linear.bias[4:8].fill_(2.0)
+        module.linear.bias[8:12].fill_(3.0)
+        assert module.view_linear is not None
+        module.view_linear.weight.zero_()
+        module.view_linear.bias.zero_()
+        module.view_linear.bias[:4].fill_(4.0)
+        module.view_linear.bias[4:8].fill_(5.0)
+        module.view_linear.bias[8:12].fill_(6.0)
+        module.norm.weight.fill_(1.0)
+        module.norm.bias.zero_()
+    points = torch.tensor([[[1.0, 2.0, 3.0, 4.0]]])
+    views = points.clone()
+
+    point_out, view_out, point_gate, view_gate = module.forward_with_point_views(
+        points, views, torch.ones(1, 4)
+    )
+
+    expected_point = F.layer_norm(points, (4,)) * 3.0 + 1.0
+    expected_view = F.layer_norm(views, (4,)) * 6.0 + 4.0
+    torch.testing.assert_close(point_out, expected_point)
+    torch.testing.assert_close(view_out, expected_view)
+    torch.testing.assert_close(point_gate, torch.full_like(point_gate, 3.0))
+    torch.testing.assert_close(view_gate, torch.full_like(view_gate, 6.0))
+
+
 def test_adaptive_layer_norm_accepts_per_frame_timestep_embeddings():
     module = PhysCtrlAdaLayerNorm(4)
     with torch.no_grad():
@@ -201,3 +232,61 @@ def test_view_tokens_only_enter_spatial_branch_and_invalid_values_are_zeroed():
     assert output_points.shape == points.shape
     assert output_views.shape == views.shape
     assert not output_views[:, :, 1].any()
+
+
+def test_separate_view_gate_mode_adds_view_modulation_to_each_spatial_sublayer():
+    block = PhysCtrlSpatialTemporalBlock(
+        dim=4, heads=2, point_view_gate_mode="separate"
+    )
+
+    assert block.norm1.view_linear is not None
+    assert block.norm2.view_linear is not None
+    assert "norm1.view_linear.weight" in block.state_dict()
+    assert "norm2.view_linear.weight" in block.state_dict()
+
+
+def test_separate_view_gate_changes_only_view_spatial_residuals():
+    block = PhysCtrlSpatialTemporalBlock(
+        dim=4, heads=2, point_view_gate_mode="separate"
+    )
+    set_identity_qkvo(block.spatial_attention)
+    with torch.no_grad():
+        for norm in (block.norm1, block.norm2):
+            norm.linear.weight.zero_()
+            norm.linear.bias.zero_()
+            assert norm.view_linear is not None
+            norm.view_linear.weight.zero_()
+            norm.view_linear.bias.zero_()
+        block.norm1.view_linear.bias[8:12].fill_(1.0)
+        for parameter in block.temporal_attention.parameters():
+            parameter.zero_()
+    points = torch.tensor([[[[1.0, 2.0, 3.0, 4.0]]]])
+    views = torch.tensor([[[[4.0, 3.0, 2.0, 1.0]]]])
+    mask = torch.ones(1, 1, 1, dtype=torch.bool)
+    temb = torch.ones(1, 1, 4)
+
+    output_points, output_views = block.forward_with_point_views(
+        points, views, mask, temb
+    )
+
+    torch.testing.assert_close(output_points, points)
+    assert not torch.equal(output_views, views)
+
+
+def test_separate_view_gate_leaves_the_control_forward_path_unchanged():
+    torch.manual_seed(9)
+    shared_block = PhysCtrlSpatialTemporalBlock(dim=4, heads=2)
+    torch.manual_seed(9)
+    separate_block = PhysCtrlSpatialTemporalBlock(
+        dim=4, heads=2, point_view_gate_mode="separate"
+    )
+    separate_block.load_state_dict(shared_block.state_dict(), strict=False)
+    points = torch.randn(1, 2, 3, 4)
+    controls = torch.randn(1, 2, 2, 4)
+    temb = torch.randn(1, 2, 4)
+
+    shared_output = shared_block(points, controls, temb)
+    separate_output = separate_block(points, controls, temb)
+
+    torch.testing.assert_close(shared_output[0], separate_output[0])
+    torch.testing.assert_close(shared_output[1], separate_output[1])

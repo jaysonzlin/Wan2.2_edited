@@ -2,10 +2,34 @@ import torch
 
 from train_pvc import (
     build_pvc_lr_scheduler,
+    build_pvc_training_model,
     build_pvc_training_dataset,
     compute_pvc_training_prediction,
     sample_pvc_visualization,
 )
+
+
+def test_pvc_training_model_forwards_the_selected_view_gate_mode():
+    seen = {}
+
+    model = build_pvc_training_model(
+        {"model": {"point_view_gate_mode": "separate"}},
+        5,
+        model_factory=lambda **kwargs: seen.update(kwargs) or "model",
+    )
+
+    assert model == "model"
+    assert seen["point_view_gate_mode"] == "separate"
+
+
+def test_pvc_training_model_defaults_to_shared_view_gate_mode():
+    seen = {}
+
+    build_pvc_training_model(
+        {"model": {}}, 5, model_factory=lambda **kwargs: seen.update(kwargs)
+    )
+
+    assert seen["point_view_gate_mode"] == "shared"
 
 
 def test_pvc_lr_scheduler_provides_required_constant_factory():

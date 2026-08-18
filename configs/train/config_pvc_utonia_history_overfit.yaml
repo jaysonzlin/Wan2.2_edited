@@ -37,6 +37,7 @@ model:
   frame_cond: true
   transformer_block: SpatialTemporalTransformerBlock
   utonia_enabled: true
+  point_view_gate_mode: shared
   conditioning: history
   history_frames: 4
 objective:

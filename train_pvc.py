@@ -2,6 +2,7 @@
 
 import argparse
 from pathlib import Path
+from typing import Any, Callable
 
 from training.pvc_config import load_pvc_config
 from training.schedules import create_lr_scheduler
@@ -53,6 +54,24 @@ def build_pvc_lr_scheduler(schedule_name, optimizer, warmup_steps, max_train_ste
     )
 
 
+def build_pvc_training_model(
+    config: dict[str, Any],
+    utonia_feature_dim: int,
+    *,
+    model_factory: Callable[..., Any],
+) -> Any:
+    """Build the fixed PVC architecture with its selected view-gating ablation."""
+    return model_factory(
+        n_points=2048,
+        n_future_frames=45,
+        latent_dim=256,
+        n_layers=8,
+        num_heads=4,
+        utonia_feature_dim=utonia_feature_dim,
+        point_view_gate_mode=config["model"].get("point_view_gate_mode", "shared"),
+    )
+
+
 def sample_pvc_visualization(pipeline, batch, device, num_inference_steps, generator):
     """Sample PVC futures and assemble the complete 49-frame trajectory."""
     import torch
@@ -100,7 +119,9 @@ def main(config=None):
     set_seed(config["seed"])
     dataset, feature_dim = build_pvc_training_dataset(config, dataset_factory=PVCTrajectoryDataset, extractor_factory=UtoniaFeatureExtractor, trajectory_cache_preparer=prepare_utonia_feature_cache, point_view_cache_preparer=prepare_point_view_utonia_feature_cache)
     loader = DataLoader(dataset, batch_size=config["train_batch_size"], shuffle=True, num_workers=config["dataloader_num_workers"])
-    model = PVCTrajectoryModel(n_points=2048, n_future_frames=45, latent_dim=256, n_layers=8, num_heads=4, utonia_feature_dim=feature_dim)
+    model = build_pvc_training_model(
+        config, feature_dim, model_factory=PVCTrajectoryModel
+    )
     scheduler = create_pc_noise_scheduler(config["objective"])
     optimizer = torch.optim.AdamW(model.parameters(), lr=config["learning_rate"], betas=(config["adam_beta1"], config["adam_beta2"]), weight_decay=config["adam_weight_decay"], eps=config["adam_epsilon"])
     lr_scheduler = build_pvc_lr_scheduler(

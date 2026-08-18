@@ -4,12 +4,22 @@ import torch
 import torch.nn as nn
 
 from .pc_trajectory import PCTrajectoryModel
+from .pc_physctrl import PhysCtrlSpatialTemporalBlock
 
 
 class PVCTrajectoryModel(PCTrajectoryModel):
     """Specialized history model whose view stream conditions spatial attention."""
 
-    def __init__(self, *args, utonia_feature_dim: int | None = None, **kwargs):
+    def __init__(
+        self,
+        *args,
+        utonia_feature_dim: int | None = None,
+        point_view_gate_mode: str = "shared",
+        **kwargs,
+    ):
+        if point_view_gate_mode not in {"shared", "separate"}:
+            raise ValueError("point_view_gate_mode must be 'shared' or 'separate'")
+        self.point_view_gate_mode = point_view_gate_mode
         super().__init__(
             *args,
             objective_type="ddpm",
@@ -22,6 +32,18 @@ class PVCTrajectoryModel(PCTrajectoryModel):
             raise ValueError("PVC requires utonia_feature_dim")
         self.point_view_type_embedding = nn.Parameter(
             torch.zeros(1, 1, 1, self.latent_dim)
+        )
+
+    def _build_spatial_blocks(
+        self, latent_dim: int, num_heads: int, n_layers: int
+    ) -> nn.ModuleList:
+        return nn.ModuleList(
+            PhysCtrlSpatialTemporalBlock(
+                latent_dim,
+                num_heads,
+                point_view_gate_mode=self.point_view_gate_mode,
+            )
+            for _ in range(n_layers)
         )
 
     def forward(
