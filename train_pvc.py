@@ -4,6 +4,7 @@ import argparse
 from pathlib import Path
 
 from training.pvc_config import load_pvc_config
+from training.schedules import create_lr_scheduler
 
 
 def parse_args():
@@ -44,6 +45,14 @@ def compute_pvc_training_prediction(batch, model, noise_scheduler, generator, de
     return prediction, objective_batch.target
 
 
+def build_pvc_lr_scheduler(schedule_name, optimizer, warmup_steps, max_train_steps, *, cosine_factory, constant_factory):
+    """Create PVC's scheduler using the same factory contract as train_pc."""
+    return create_lr_scheduler(
+        schedule_name, optimizer, warmup_steps, max_train_steps,
+        cosine_factory=cosine_factory, constant_factory=constant_factory,
+    )
+
+
 def sample_pvc_visualization(pipeline, batch, device, num_inference_steps, generator):
     """Sample PVC futures and assemble the complete 49-frame trajectory."""
     import torch
@@ -69,11 +78,11 @@ def main(config=None):
     from accelerate.utils import set_seed
     from torch.utils.data import DataLoader
     from diffusers import DDIMScheduler
+    from transformers import get_constant_schedule_with_warmup, get_cosine_schedule_with_warmup
     from training.pc_ddpm import make_pc_ddpm_batch
     from training.pc_objectives import mse_loss
     from training.pvc_dataset import PVCTrajectoryDataset
     from training.pvc_utonia_features import prepare_point_view_utonia_feature_cache
-    from training.schedules import create_lr_scheduler
     from training.utonia_features import UtoniaFeatureExtractor, prepare_utonia_feature_cache
     from wan.modules.pvc_trajectory import PVCTrajectoryModel
     from wan.pvc_pipeline import PVCHistoryDDIMPipeline
@@ -94,7 +103,11 @@ def main(config=None):
     model = PVCTrajectoryModel(n_points=2048, n_future_frames=45, latent_dim=256, n_layers=8, num_heads=4, utonia_feature_dim=feature_dim)
     scheduler = create_pc_noise_scheduler(config["objective"])
     optimizer = torch.optim.AdamW(model.parameters(), lr=config["learning_rate"], betas=(config["adam_beta1"], config["adam_beta2"]), weight_decay=config["adam_weight_decay"], eps=config["adam_epsilon"])
-    lr_scheduler = create_lr_scheduler(config["lr_scheduler"], optimizer, config["lr_warmup_steps"], config["max_train_steps"])
+    lr_scheduler = build_pvc_lr_scheduler(
+        config["lr_scheduler"], optimizer, config["lr_warmup_steps"], config["max_train_steps"],
+        cosine_factory=get_cosine_schedule_with_warmup,
+        constant_factory=get_constant_schedule_with_warmup,
+    )
     model, optimizer, loader, lr_scheduler = accelerator.prepare(model, optimizer, loader, lr_scheduler)
     generator = torch.Generator(device=accelerator.device).manual_seed(config["seed"])
     resumed = load_pc_checkpoint_with_fallback(accelerator, output_dir, config.get("resume_from_checkpoint")); step = int(resumed.name.removeprefix("checkpoint-")) if resumed else 0

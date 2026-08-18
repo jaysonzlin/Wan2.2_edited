@@ -1,10 +1,25 @@
 import torch
 
 from train_pvc import (
+    build_pvc_lr_scheduler,
     build_pvc_training_dataset,
     compute_pvc_training_prediction,
     sample_pvc_visualization,
 )
+
+
+def test_pvc_lr_scheduler_provides_required_constant_factory():
+    optimizer = object()
+    calls = []
+
+    result = build_pvc_lr_scheduler(
+        "constant", optimizer, 3, 9,
+        cosine_factory=lambda *_args: None,
+        constant_factory=lambda passed_optimizer, warmup: calls.append((passed_optimizer, warmup)) or "scheduler",
+    )
+
+    assert result == "scheduler"
+    assert calls == [(optimizer, 3)]
 
 
 def test_pvc_dataset_builder_prepares_both_caches_in_feature_width_order():
