@@ -32,10 +32,13 @@ exec singularity exec --nv \
     -B /net/holy-isilon \
     -B /tmp:/dev/shm \
     "${PROJECT_DIR}/cur.sif" \
-    accelerate launch \
+        accelerate launch \
         --config_file configs/accelerate/h200_single_gpu.yaml \
         train_pvc.py \
         --config configs/train/config_pvc_utonia_history_overfit.yaml \
+        output_dir=./outputs/pvc_trajectory_utonia_history_centroid_mse \
+        tracker_project_name=pvc_trajectory_utonia_history_centroid_mse \
+        model.point_view_gate_mode=separate \
         num_train_epochs=10000 \
         checkpoints_total_limit=2 \
         resume_from_checkpoint=latest
