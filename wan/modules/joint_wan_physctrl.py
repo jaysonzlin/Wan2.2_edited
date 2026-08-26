@@ -193,8 +193,9 @@ class JointWanPhysCtrlModel(nn.Module):
         noisy_future_state: torch.Tensor,
         frame_times: torch.Tensor,
         init_pc: torch.Tensor,
-        initial_linear_velocity: torch.Tensor,
-        initial_angular_velocity: torch.Tensor,
+        initial_linear_velocity: torch.Tensor | None = None,
+        initial_angular_velocity: torch.Tensor | None = None,
+        utonia_features: torch.Tensor | None = None,
         video_condition: list[torch.Tensor] | None = None,
     ) -> tuple[list[torch.Tensor], torch.Tensor]:
         """Return Wan velocities and DDPM x0 predictions for every object in the clip."""
@@ -206,10 +207,11 @@ class JointWanPhysCtrlModel(nn.Module):
         if (
             frame_times.ndim != 3
             or frame_times.shape[:2] != (batch_size, object_count)
-            or frame_times.shape[2] != noisy_future_state.shape[2] + 1
+            or frame_times.shape[2]
+            != noisy_future_state.shape[2] + self.pc_model.history_frames
         ):
             raise ValueError(
-                "frame_times must have one more temporal slot than noisy_future_state"
+                "frame_times must include every known PC history slot"
             )
         hidden, timestep_embedding, modulation, wan_kwargs = self._prepare_wan_states(
             video_x, video_t, context, seq_len, video_condition
@@ -219,8 +221,9 @@ class JointWanPhysCtrlModel(nn.Module):
             flat(noisy_future_state),
             flat(frame_times),
             flat(init_pc),
-            flat(initial_linear_velocity),
-            flat(initial_angular_velocity),
+            None if initial_linear_velocity is None else flat(initial_linear_velocity),
+            None if initial_angular_velocity is None else flat(initial_angular_velocity),
+            None if utonia_features is None else flat(utonia_features),
         )
         for block in self.wan_model.blocks[:self.paired_start]:
             if self.training and getattr(self.wan_model, "gradient_checkpointing", False):

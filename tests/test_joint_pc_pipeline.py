@@ -86,3 +86,23 @@ def test_joint_pipeline_uses_the_pc_model_configured_horizon():
 
     assert result.future_point_clouds.shape == (1, 2, 24, 1, 3, 3)
     assert model.calls[0]["frame_times"].shape == (1, 2, 25)
+
+
+def test_joint_pipeline_supports_four_history_frames_and_utonia_features():
+    model = _JointModel(n_future_frames=45)
+    pipeline = JointWanPhysCtrlPipeline(model, _Scheduler([9]), _Scheduler([999]), time_shift=5.0)
+    history = torch.full((2, 4, 2, 2), 7.0)
+    point_history = torch.full((2, 4, 3, 3), 4.0)
+    features = torch.zeros((2, 3, 5))
+
+    result = pipeline(
+        condition_latent=history, video_shape=(2, 49, 2, 2), context=[torch.zeros(1, 4)],
+        initial_point_clouds=point_history, initial_linear_velocities=None,
+        initial_angular_velocities=None, utonia_features=features,
+        num_inference_steps=1, generator=torch.Generator().manual_seed(0),
+    )
+
+    assert result.video_latent[:, :4].eq(history).all()
+    assert result.future_point_clouds.shape == (1, 2, 45, 1, 3, 3)
+    assert model.calls[0]["frame_times"][:, :, :4].eq(0).all()
+    assert model.calls[0]["utonia_features"].shape == (1, 2, 3, 5)

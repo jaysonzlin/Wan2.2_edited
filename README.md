@@ -1,5 +1,22 @@
 # Wan2.2
 
+## Joint SimGen training
+
+Prepare the immutable dense-Utonia cache once on a CUDA node, then train with
+the completed cache and all 500 configured SimGen samples:
+
+```sh
+accelerate launch --config_file configs/accelerate/h200_single_gpu.yaml \
+  joint_simgen.py --config configs/train/joint_simgen_480.yaml --prepare-utonia-cache
+
+accelerate launch --config_file configs/accelerate/h200_single_gpu.yaml \
+  joint_simgen.py --config configs/train/joint_simgen_480.yaml
+```
+
+The `joint_simgen.py --prepare-utonia-cache` mode requires CUDA and the Utonia
+weights (alongside its required `--config` argument). Normal training only
+reads the completed cache; it never creates or refreshes records.
+
 ## Kubric TI2V overfit training
 
 Run the custom trainer only on the remote H200 machine. It fine-tunes the full

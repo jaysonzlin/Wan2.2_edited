@@ -46,12 +46,13 @@ def make_flow_matching_batch(
     generator: torch.Generator,
     time_shift: float,
     num_train_timesteps: int,
+    history_frames: int = 1,
 ) -> FlowMatchingBatch:
-    """Create a Wan flow-matching objective with a clean conditioned first slot."""
+    """Create a Wan flow-matching objective with clean temporal history slots."""
     if clean_latents.ndim != 5:
         raise ValueError("clean_latents must have shape [batch, channels, time, height, width]")
-    if clean_latents.shape[2] < 2:
-        raise ValueError("I2V training requires a conditioned slot and target slots")
+    if not 0 < history_frames < clean_latents.shape[2]:
+        raise ValueError("history_frames must leave at least one target latent slot")
 
     batch_size = clean_latents.shape[0]
     uniform_times = torch.rand(
@@ -69,13 +70,13 @@ def make_flow_matching_batch(
     velocity_target = noise - clean_latents
 
     loss_mask = torch.ones_like(clean_latents, dtype=torch.bool)
-    loss_mask[:, :, 0] = False
-    model_input[:, :, 0] = clean_latents[:, :, 0]
+    loss_mask[:, :, :history_frames] = False
+    model_input[:, :, :history_frames] = clean_latents[:, :, :history_frames]
 
     latent_timesteps = shifted_times.mul(num_train_timesteps).unsqueeze(1).expand(
         -1, clean_latents.shape[2]
-    )
-    latent_timesteps[:, 0] = 0
+    ).clone()
+    latent_timesteps[:, :history_frames] = 0
     return FlowMatchingBatch(
         model_input=model_input,
         velocity_target=velocity_target,

@@ -168,7 +168,7 @@ def test_joint_wrapper_supports_the_pc_model_configured_horizon():
 def test_joint_wrapper_rejects_frame_times_that_do_not_match_the_pc_horizon():
     model = _small_joint_model(n_future_frames=24)
 
-    with pytest.raises(ValueError, match="one more temporal slot"):
+    with pytest.raises(ValueError, match="include every known PC history slot"):
         model(
             video_x=[torch.randn(1, 1, 2, 2)],
             video_t=torch.tensor([[1.0]]),
@@ -180,3 +180,32 @@ def test_joint_wrapper_rejects_frame_times_that_do_not_match_the_pc_horizon():
             initial_linear_velocity=torch.zeros(1, 1, 1, 3),
             initial_angular_velocity=torch.zeros(1, 1, 1, 3),
         )
+
+
+def test_joint_wrapper_supports_history_pc_conditioning_and_utonia_features():
+    wan = WanModel(
+        model_type="ti2v", patch_size=(1, 2, 2), text_len=2, in_dim=1, dim=64,
+        ffn_dim=128, freq_dim=16, text_dim=4, out_dim=1, num_heads=1, num_layers=8,
+    )
+    for block in wan.blocks:
+        block.self_attn = _ZeroAttention()
+        block.cross_attn = _ZeroAttention()
+    model = JointWanPhysCtrlModel(
+        wan,
+        PCTrajectoryModel(
+            n_points=2, n_future_frames=45, latent_dim=64, n_layers=8, num_heads=1,
+            objective_type="ddpm", conditioning="history", history_frames=4,
+            utonia_feature_dim=3,
+        ),
+    )
+
+    _, trajectories = model(
+        video_x=[torch.randn(1, 1, 2, 2)], video_t=torch.tensor([[1.0]]),
+        context=[torch.zeros(2, 4)], seq_len=1,
+        noisy_future_state=torch.randn(1, 2, 45, 1, 2, 3),
+        frame_times=torch.cat((torch.zeros(1, 2, 4), torch.ones(1, 2, 45)), dim=2),
+        init_pc=torch.randn(1, 2, 4, 1, 2, 3),
+        utonia_features=torch.randn(1, 2, 2, 3),
+    )
+
+    assert trajectories.shape == (1, 2, 45, 1, 2, 3)
