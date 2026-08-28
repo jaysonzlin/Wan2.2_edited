@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 from pathlib import Path
 
 import torch
@@ -57,6 +58,30 @@ def prepare_cache(config: dict) -> int:
         data["utonia_cache_root"],
         extractor,
     )
+
+
+def _cache_preparation_world_size() -> int:
+    """Return the process count requested by an Accelerate/torch launch."""
+    return int(os.environ.get("WORLD_SIZE", "1"))
+
+
+def _shared_generator(device: torch.device | str, seed: int) -> torch.Generator:
+    """Create the requested same-seed diffusion generator for one process."""
+    return torch.Generator(device=device).manual_seed(seed)
+
+
+def _reduced_mean(accelerator, local_sum: torch.Tensor, local_count: int) -> torch.Tensor:
+    """Reduce a sum/count pair without weighting ranks equally."""
+    global_sum = accelerator.reduce(local_sum, reduction="sum")
+    global_count = accelerator.reduce(
+        local_sum.new_tensor(local_count), reduction="sum"
+    )
+    return global_sum / global_count
+
+
+def _visualization_history(point_clouds: torch.Tensor) -> torch.Tensor:
+    """Return the object-major four-frame history expected by the sampler."""
+    return point_clouds[0, :, :4].squeeze(2)
 
 
 def build_datasets(config: dict) -> tuple[SimGenJointDataset, SimGenJointDataset]:
@@ -182,7 +207,7 @@ def _save_simgen_visualization(
         ),
         time_shift=objective["time_shift"],
     )
-    history = point_clouds[0, :, :4].squeeze(2)
+    history = _visualization_history(point_clouds)
     sample = pipeline(
         condition_latent=clean_latents[0, :, :4],
         video_shape=tuple(clean_latents.shape[1:]),
@@ -227,21 +252,21 @@ def run_training(config: dict) -> None:
     from wan.modules.pc_trajectory import PCTrajectoryModel
 
     training, logging = config["training"], config["logging"]
-    train_dataset, validation_dataset = build_datasets(config)
-    visualization_batch = simgen_joint_collate([train_dataset[0]])
-    feature_width = visualization_batch["utonia_features"].shape[-1]
-
     accelerator = Accelerator(
         gradient_accumulation_steps=training["gradient_accumulation_steps"],
         mixed_precision=training["mixed_precision"],
         log_with=logging.get("report_to") or None,
     )
-    set_seed(training["seed"])
+    set_seed(training["seed"], device_specific=False)
+    train_dataset, validation_dataset = build_datasets(config)
+    visualization_batch = simgen_joint_collate([train_dataset[0]])
+    feature_width = visualization_batch["utonia_features"].shape[-1]
     output_dir = Path(logging["output_dir"])
     output_dir.mkdir(parents=True, exist_ok=True)
     if accelerator.is_main_process:
         with (output_dir / "config.yaml").open("w") as output:
             yaml.safe_dump(config, output)
+    accelerator.wait_for_everyone()
     if logging.get("report_to"):
         accelerator.init_trackers(logging["project"], config=config)
 
@@ -278,13 +303,17 @@ def run_training(config: dict) -> None:
         num_train_timesteps=config["objective"]["num_train_timesteps"],
         beta_schedule=config["objective"]["beta_schedule"], prediction_type="sample", clip_sample=False,
     )
-    model, optimizer, train_loader, validation_loader, lr_scheduler = accelerator.prepare(
-        model, optimizer, train_loader, validation_loader, lr_scheduler
+    model, optimizer, train_loader, lr_scheduler = accelerator.prepare(
+        model, optimizer, train_loader, lr_scheduler
     )
-    generator = torch.Generator(device=accelerator.device).manual_seed(training["seed"])
     resume_path = load_joint_checkpoint_with_fallback(
         accelerator, output_dir, training.get("resume_from_checkpoint")
     )
+    # Cross-world-size resumes cannot recover missing rank-local RNG snapshots.
+    # The requested contract is therefore a shared configured seed on every rank.
+    set_seed(training["seed"], device_specific=False)
+    generator = _shared_generator(accelerator.device, training["seed"])
+    validation_generator = _shared_generator(accelerator.device, training["seed"])
     global_step = int(resume_path.name.removeprefix("checkpoint-")) if resume_path else 0
     progress_bar = create_progress_bar(training["max_train_steps"], global_step, accelerator.is_main_process)
 
@@ -313,51 +342,72 @@ def run_training(config: dict) -> None:
             if not accelerator.sync_gradients:
                 continue
             global_step += 1
-            metrics = {
-                "train/video_loss": video_loss.detach().item(),
-                "train/pc_loss_sum": pc_loss_sum.detach().item(),
-                "train/loss": loss.detach().item(),
-                "train/bridge_gradient_norm": bridge_grad_norm.detach().item(),
-                "train/video_gradient_norm": wan_grad_norm.detach().item(),
-                "train/pc_gradient_norm": pc_grad_norm.detach().item(),
+            reduced_metrics = {
+                "train/video_loss": _reduced_mean(accelerator, video_loss.detach(), 1),
+                "train/pc_loss_sum": _reduced_mean(accelerator, pc_loss_sum.detach(), 1),
+                "train/loss": _reduced_mean(accelerator, loss.detach(), 1),
+                "train/bridge_gradient_norm": _reduced_mean(accelerator, bridge_grad_norm.detach(), 1),
+                "train/video_gradient_norm": _reduced_mean(accelerator, wan_grad_norm.detach(), 1),
+                "train/pc_gradient_norm": _reduced_mean(accelerator, pc_grad_norm.detach(), 1),
                 "train/learning_rate": lr_scheduler.get_last_lr()[0],
             }
-            metrics.update(per_object_metric_values("train/pc_loss_object", object_losses[0].detach()))
-            accelerator.log(metrics, step=global_step)
-            progress_bar.update(1)
-            progress_bar.set_postfix(loss=f"{loss.detach().item():.4f}", lr=f"{lr_scheduler.get_last_lr()[0]:.2e}")
+            if accelerator.is_main_process:
+                metrics = {
+                    name: value.item() if isinstance(value, torch.Tensor) else value
+                    for name, value in reduced_metrics.items()
+                }
+                if accelerator.num_processes == 1:
+                    metrics.update(per_object_metric_values("train/pc_loss_object", object_losses[0].detach()))
+                accelerator.log(metrics, step=global_step)
+                progress_bar.update(1)
+                progress_bar.set_postfix(
+                    loss=f"{metrics['train/loss']:.4f}",
+                    lr=f"{lr_scheduler.get_last_lr()[0]:.2e}",
+                )
             if global_step % training["checkpoint_every_steps"] == 0:
                 accelerator.save_state(output_dir / f"checkpoint-{global_step}")
                 if accelerator.is_main_process:
                     prune_joint_checkpoints(output_dir, training["checkpoints_total_limit"])
+                accelerator.wait_for_everyone()
             if global_step % config["validation"]["every_steps"] == 0:
                 unwrapped = accelerator.unwrap_model(model)
                 was_training = unwrapped.training
                 unwrapped.eval()
-                validation_losses = []
-                with torch.no_grad():
-                    for validation_batch in validation_loader:
-                        validation_losses.append(
-                            _joint_simgen_losses(
-                                validation_batch, model, vae, text_encoder, noise_scheduler,
-                                generator, accelerator.device, config["objective"],
-                            )[0].detach()
-                        )
-                accelerator.log(
-                    {"validation/loss": torch.stack(validation_losses).mean().item()}, step=global_step
-                )
                 if accelerator.is_main_process:
+                    from tqdm.auto import tqdm
+
+                    validation_losses = []
+                    with torch.no_grad():
+                        validation_progress = tqdm(
+                            validation_loader,
+                            desc="Validation",
+                            unit="batch",
+                            dynamic_ncols=True,
+                        )
+                        for validation_batch in validation_progress:
+                            validation_losses.append(
+                                _joint_simgen_losses(
+                                    validation_batch, unwrapped, vae, text_encoder,
+                                    noise_scheduler, validation_generator, accelerator.device,
+                                    config["objective"],
+                                )[0].detach()
+                            )
+                    accelerator.log(
+                        {"validation/loss": torch.stack(validation_losses).mean().item()},
+                        step=global_step,
+                    )
                     with torch.no_grad():
                         (
                             _, _, _, _, visual_latents, visual_context, visual_points, visual_features,
                         ) = _joint_simgen_losses(
-                            visualization_batch, model, vae, text_encoder, noise_scheduler,
-                            generator, accelerator.device, config["objective"],
+                            visualization_batch, unwrapped, vae, text_encoder, noise_scheduler,
+                            validation_generator, accelerator.device, config["objective"],
                         )
                     _save_simgen_visualization(
                         unwrapped, vae, visual_context, visual_latents, visual_points, visual_features,
                         output_dir, global_step, config, accelerator.device,
                     )
+                accelerator.wait_for_everyone()
                 if was_training:
                     unwrapped.train()
             if global_step >= training["max_train_steps"]:
@@ -376,6 +426,11 @@ def main() -> None:
     args = parser.parse_args()
     config = load_simgen_joint_config(args.config, args.overrides)
     if args.prepare_utonia_cache:
+        if _cache_preparation_world_size() > 1:
+            raise ValueError(
+                "Utonia cache preparation must run on a single GPU; use "
+                "configs/accelerate/h200_single_gpu.yaml before distributed training"
+            )
         prepare_cache(config)
     else:
         run_training(config)

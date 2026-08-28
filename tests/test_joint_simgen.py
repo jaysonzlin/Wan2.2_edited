@@ -2,6 +2,18 @@ import json
 from pathlib import Path
 
 import joint_simgen
+import pytest
+import torch
+import yaml
+
+
+class SumReducer:
+    def __init__(self, reduced_values):
+        self.reduced_values = iter(reduced_values)
+
+    def reduce(self, value, reduction):
+        assert reduction == "sum"
+        return next(self.reduced_values)
 
 
 def test_prepare_cache_uses_sample_zero_panda_ball_can_sources(monkeypatch, tmp_path):
@@ -69,6 +81,52 @@ def test_main_dispatches_training_when_cache_preparation_is_not_requested(monkey
     joint_simgen.main()
 
     assert calls == [{"mode": "train"}]
+
+
+def test_main_rejects_distributed_cache_preparation(monkeypatch):
+    monkeypatch.setenv("WORLD_SIZE", "4")
+    monkeypatch.setattr(joint_simgen, "load_simgen_joint_config", lambda *_: {"data": {}})
+    monkeypatch.setattr(
+        "sys.argv", ["joint_simgen.py", "--config", "config.yaml", "--prepare-utonia-cache"]
+    )
+
+    with pytest.raises(ValueError, match="single GPU"):
+        joint_simgen.main()
+
+
+def test_shared_generator_restarts_from_configured_seed():
+    first = joint_simgen._shared_generator("cpu", 42)
+    second = joint_simgen._shared_generator("cpu", 42)
+
+    assert torch.equal(torch.rand(4, generator=first), torch.rand(4, generator=second))
+
+
+def test_reduced_mean_uses_global_loss_sum_and_example_count():
+    accelerator = SumReducer([torch.tensor(5.0), torch.tensor(2)])
+
+    assert joint_simgen._reduced_mean(accelerator, torch.tensor(5.0), 2).item() == 2.5
+
+
+def test_visualization_history_matches_the_sampler_input_contract():
+    point_clouds = torch.zeros(1, 3, 49, 1, 2048, 3)
+
+    history = joint_simgen._visualization_history(point_clouds)
+
+    assert history.shape == (3, 4, 2048, 3)
+
+
+def test_4gpu_profile_has_four_processes_and_separate_output():
+    accelerate_config = yaml.safe_load(
+        Path("configs/accelerate/h200_4gpu.yaml").read_text()
+    )
+    training_config = yaml.safe_load(
+        Path("configs/train/joint_simgen_480_4gpu.yaml").read_text()
+    )
+
+    assert accelerate_config["distributed_type"] == "MULTI_GPU"
+    assert accelerate_config["num_processes"] == 4
+    assert training_config["training"]["max_train_steps"] == 10_000
+    assert training_config["logging"]["output_dir"] == "outputs/joint_simgen_4gpu"
 
 
 def test_readme_documents_simgen_cache_preparation_and_training():

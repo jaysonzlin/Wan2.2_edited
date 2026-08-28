@@ -60,7 +60,7 @@ def test_joint_pipeline_evaluates_both_branches_once_per_synchronized_outer_step
     assert torch.equal(result.video_latent[:, :1], condition)
     assert result.future_point_clouds.shape == (1, 2, 48, 1, 3, 3)
     assert model.calls[0]["frame_times"].shape == (1, 2, 49)
-    assert model.calls[0]["init_pc"].eq(init_pc.unsqueeze(0)).all()
+    assert model.calls[0]["init_pc"].eq(init_pc.unsqueeze(0).unsqueeze(3)).all()
     assert model.calls[0]["video_t"].shape == (1, 3)
 
 

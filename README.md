@@ -3,7 +3,8 @@
 ## Joint SimGen training
 
 Prepare the immutable dense-Utonia cache once on a CUDA node, then train with
-the completed cache and all 500 configured SimGen samples:
+the completed cache and all 500 configured SimGen samples. Cache preparation
+is intentionally a single-GPU operation:
 
 ```sh
 accelerate launch --config_file configs/accelerate/h200_single_gpu.yaml \
@@ -11,11 +12,29 @@ accelerate launch --config_file configs/accelerate/h200_single_gpu.yaml \
 
 accelerate launch --config_file configs/accelerate/h200_single_gpu.yaml \
   joint_simgen.py --config configs/train/joint_simgen_480.yaml
+
 ```
 
 The `joint_simgen.py --prepare-utonia-cache` mode requires CUDA and the Utonia
 weights (alongside its required `--config` argument). Normal training only
 reads the completed cache; it never creates or refreshes records.
+
+For the four-GPU H200 profile, run the completed cache above first, then launch
+the dedicated training profile:
+
+```sh
+accelerate launch --config_file configs/accelerate/h200_4gpu.yaml \
+  joint_simgen.py --config configs/train/joint_simgen_480_4gpu.yaml
+
+sbatch submit_joint_simgen_4gpu.sh
+```
+
+This profile uses local batch size one on each rank (effective global batch
+four), runs 10,000 optimizer steps, and writes to `outputs/joint_simgen_4gpu`.
+Accelerate shards the training data; rank zero evaluates the fixed ten
+validation samples without padding. Checkpoints can be resumed across
+one- and four-GPU launches when Accelerate can load their shared training state;
+each resumed rank resets its RNG to `training.seed`.
 
 ## Kubric TI2V overfit training
 

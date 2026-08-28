@@ -62,7 +62,7 @@ class JointWanPhysCtrlPipeline:
             dtype=initial_point_clouds.dtype,
             generator=generator,
         )
-        init_pc = initial_point_clouds.unsqueeze(0).to(device)
+        init_pc = initial_point_clouds.unsqueeze(0).unsqueeze(3).to(device)
         linear = None if initial_linear_velocities is None else initial_linear_velocities.unsqueeze(0).to(device)
         angular = None if initial_angular_velocities is None else initial_angular_velocities.unsqueeze(0).to(device)
         features = None if utonia_features is None else utonia_features.unsqueeze(0).to(device)
