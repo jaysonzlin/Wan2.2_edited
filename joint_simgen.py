@@ -79,6 +79,21 @@ def _reduced_mean(accelerator, local_sum: torch.Tensor, local_count: int) -> tor
     return global_sum / global_count
 
 
+def _validation_metrics(
+    validation_losses: list[torch.Tensor], validation_pc_losses: list[torch.Tensor]
+) -> dict[str, float]:
+    """Return rank-zero means for the total and point-cloud validation losses."""
+    return {
+        "validation/loss": torch.stack(validation_losses).mean().item(),
+        "validation/pc_loss_sum": torch.stack(validation_pc_losses).mean().item(),
+    }
+
+
+def _validation_loss_components(loss_outputs) -> tuple[torch.Tensor, torch.Tensor]:
+    """Extract detached total and point-cloud losses from one validation forward."""
+    return loss_outputs[0].detach(), loss_outputs[2].detach()
+
+
 def _visualization_history(point_clouds: torch.Tensor) -> torch.Tensor:
     """Return the object-major four-frame history expected by the sampler."""
     return point_clouds[0, :, :4].squeeze(2)
@@ -377,6 +392,7 @@ def run_training(config: dict) -> None:
                     from tqdm.auto import tqdm
 
                     validation_losses = []
+                    validation_pc_losses = []
                     with torch.no_grad():
                         validation_progress = tqdm(
                             validation_loader,
@@ -385,15 +401,18 @@ def run_training(config: dict) -> None:
                             dynamic_ncols=True,
                         )
                         for validation_batch in validation_progress:
-                            validation_losses.append(
-                                _joint_simgen_losses(
-                                    validation_batch, unwrapped, vae, text_encoder,
-                                    noise_scheduler, validation_generator, accelerator.device,
-                                    config["objective"],
-                                )[0].detach()
+                            validation_outputs = _joint_simgen_losses(
+                                validation_batch, unwrapped, vae, text_encoder,
+                                noise_scheduler, validation_generator, accelerator.device,
+                                config["objective"],
                             )
+                            validation_loss, validation_pc_loss = _validation_loss_components(
+                                validation_outputs
+                            )
+                            validation_losses.append(validation_loss)
+                            validation_pc_losses.append(validation_pc_loss)
                     accelerator.log(
-                        {"validation/loss": torch.stack(validation_losses).mean().item()},
+                        _validation_metrics(validation_losses, validation_pc_losses),
                         step=global_step,
                     )
                     with torch.no_grad():

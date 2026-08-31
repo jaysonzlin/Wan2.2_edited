@@ -107,6 +107,24 @@ def test_reduced_mean_uses_global_loss_sum_and_example_count():
     assert joint_simgen._reduced_mean(accelerator, torch.tensor(5.0), 2).item() == 2.5
 
 
+def test_validation_metrics_include_mean_pc_loss():
+    metrics = joint_simgen._validation_metrics(
+        [torch.tensor(2.0), torch.tensor(4.0)],
+        [torch.tensor(0.5), torch.tensor(1.5)],
+    )
+
+    assert metrics == {"validation/loss": 3.0, "validation/pc_loss_sum": 1.0}
+
+
+def test_validation_loss_components_select_total_and_pc_loss_sum():
+    total_loss, pc_loss_sum = joint_simgen._validation_loss_components(
+        (torch.tensor(2.0), torch.tensor(0.75), torch.tensor(1.5), None)
+    )
+
+    assert total_loss.item() == 2.0
+    assert pc_loss_sum.item() == 1.5
+
+
 def test_visualization_history_matches_the_sampler_input_contract():
     point_clouds = torch.zeros(1, 3, 49, 1, 2048, 3)
 
