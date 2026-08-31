@@ -59,8 +59,12 @@ It configures `resume_from_checkpoint=latest`.
 
 Every 1,000 steps, save a full Accelerate `checkpoint-<step>/` directory.
 These directories include model, optimizer, scheduler, and rank-local state so
-an interrupted run resumes correctly. Latest-resume behavior must fall back
-past incomplete checkpoint directories.
+an interrupted run resumes correctly. `resume_from_checkpoint=latest` sorts
+numeric checkpoint directories newest first, attempts to load each in turn,
+logs a failed attempt, and falls back to the next older directory when a load
+fails. If none can load, it raises one error naming every attempted directory.
+Retain only the two newest checkpoint directories; the best-transfer export
+below is separate, is never pruned, and does not count toward this limit.
 
 Every 1,000 steps, evaluate the held-out validation split. If the globally
 reduced validation PC loss improves, rank zero writes:
