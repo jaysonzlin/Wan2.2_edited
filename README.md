@@ -36,6 +36,20 @@ validation samples without padding. Checkpoints can be resumed across
 one- and four-GPU launches when Accelerate can load their shared training state;
 each resumed rank resets its RNG to `training.seed`.
 
+For two H200 nodes (eight GPUs total), use the Slurm launcher. It derives an
+IPv4 rendezvous address and job-specific port from the allocated nodes, then
+starts one Accelerate launch agent on each node:
+
+```sh
+sbatch submit_joint_simgen_8gpu_2node.sh
+```
+
+The 8-GPU profile uses local batch size one (effective global batch eight),
+runs 100,000 optimizer steps, checkpoints and visualizes every 1,000 steps,
+validates every 250 steps, and writes to `outputs/joint_simgen_8gpu`. Each
+12-hour allocation resumes manually from `latest`; both nodes must see the
+shared output directory and the prepared single-GPU Utonia cache.
+
 ## Kubric TI2V overfit training
 
 Run the custom trainer only on the remote H200 machine. It fine-tunes the full

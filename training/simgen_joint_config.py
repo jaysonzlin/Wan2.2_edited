@@ -27,18 +27,21 @@ def validate_simgen_joint_config(config: dict) -> None:
         raise ValueError("objective.enable_rigid_loss must be false")
     if objective.get("enable_deform_loss") is not False:
         raise ValueError("objective.enable_deform_loss must be false")
-    expected_ranges = {
-        "train_start": 0,
-        "train_end": 489,
-        "validation_start": 490,
-        "validation_end": 499,
-    }
-    if any(data.get(key) != value for key, value in expected_ranges.items()):
-        raise ValueError("data split must be sample_0 through sample_489 and sample_490 through sample_499")
-    if config.get("validation", {}).get("every_steps") != 250:
-        raise ValueError("validation.every_steps must be 250")
-    if config.get("visualization", {}).get("every_steps") != 250:
-        raise ValueError("visualization.every_steps must be 250")
+    train_end = data.get("train_end")
+    if (
+        data.get("train_start") != 0
+        or not isinstance(train_end, int)
+        or isinstance(train_end, bool)
+        or not 0 <= train_end <= 489
+    ):
+        raise ValueError("training split must start at sample_0 and end no later than sample_489")
+    expected_validation_range = {"validation_start": 490, "validation_end": 499}
+    if any(data.get(key) != value for key, value in expected_validation_range.items()):
+        raise ValueError("validation split must be sample_490 through sample_499")
+    if config.get("validation", {}).get("every_steps") not in {250, 1000}:
+        raise ValueError("validation.every_steps must be 250 or 1000")
+    if config.get("visualization", {}).get("every_steps") not in {250, 1000}:
+        raise ValueError("visualization.every_steps must be 250 or 1000")
     expected_optimizer = {
         "video": {"lr": 1.0e-5, "betas": [0.9, 0.95], "eps": 1.0e-8, "weight_decay": 0.1},
         "bca": {"lr": 1.0e-5, "betas": [0.9, 0.95], "eps": 1.0e-8, "weight_decay": 0.1},

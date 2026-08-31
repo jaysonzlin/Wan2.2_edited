@@ -25,6 +25,15 @@ def test_simgen_config_requires_480_history_flow_and_ddpm():
 
     validate_simgen_joint_config(config)
 
+    config["visualization"]["every_steps"] = 1000
+    validate_simgen_joint_config(config)
+
+    config["validation"]["every_steps"] = 1000
+    validate_simgen_joint_config(config)
+
+    config["data"]["train_end"] = 127
+    validate_simgen_joint_config(config)
+
     config["data"]["width"] = 832
     with pytest.raises(ValueError, match="must both be 480"):
         validate_simgen_joint_config(config)
@@ -50,7 +59,7 @@ def test_simgen_config_requires_exact_splits_cadences_and_optimizer_groups():
         },
     }
 
-    with pytest.raises(ValueError, match="sample_0 through sample_489"):
+    with pytest.raises(ValueError, match="training split must start at sample_0"):
         validate_simgen_joint_config(config)
 
 

@@ -1,5 +1,8 @@
 import json
+import os
 from pathlib import Path
+import subprocess
+import textwrap
 
 import joint_simgen
 import pytest
@@ -145,6 +148,87 @@ def test_4gpu_profile_has_four_processes_and_separate_output():
     assert accelerate_config["num_processes"] == 4
     assert training_config["training"]["max_train_steps"] == 10_000
     assert training_config["logging"]["output_dir"] == "outputs/joint_simgen_4gpu"
+
+
+def test_8gpu_profile_has_two_machines_and_long_run_settings():
+    accelerate_config = yaml.safe_load(
+        Path("configs/accelerate/h200_8gpu_2node.yaml").read_text()
+    )
+    training_config = yaml.safe_load(
+        Path("configs/train/joint_simgen_480_8gpu.yaml").read_text()
+    )
+
+    assert accelerate_config["distributed_type"] == "MULTI_GPU"
+    assert accelerate_config["num_machines"] == 2
+    assert accelerate_config["num_processes"] == 8
+    assert training_config["training"]["max_train_steps"] == 100_000
+    assert training_config["training"]["checkpoint_every_steps"] == 1000
+    assert training_config["visualization"]["every_steps"] == 1000
+    assert training_config["validation"]["every_steps"] == 250
+    assert training_config["logging"]["output_dir"] == "outputs/joint_simgen_8gpu"
+
+
+def test_8gpu_launcher_exports_its_image_path_to_each_srun_task(tmp_path):
+    """A task launched with a minimal environment must still find cur.sif."""
+    tools = tmp_path / "tools"
+    tools.mkdir()
+
+    (tools / "scontrol").write_text("#!/bin/bash\necho gpu001\n")
+    (tools / "getent").write_text("#!/bin/bash\necho '10.0.0.1 STREAM gpu001'\n")
+    (tools / "nvidia-smi").write_text("#!/bin/bash\nexit 0\n")
+    (tools / "singularity").write_text(
+        "#!/bin/bash\n"
+        "set -eu\n"
+        "image=\n"
+        "for argument in \"$@\"; do\n"
+        "    [[ \"$argument\" == *.sif ]] && image=\"$argument\"\n"
+        "done\n"
+        "if [[ \"$image\" != \"/n/lab_storage/ydu_lab/jaysonzlin/Wan2.2_edited/cur.sif\" ]]; then\n"
+        "    echo \"FATAL: could not open image $image\" >&2\n"
+        "    exit 255\n"
+        "fi\n"
+        "echo \"image=$image\"\n"
+    )
+    (tools / "srun").write_text(
+        textwrap.dedent(
+            """\
+            #!/bin/bash
+            set -eu
+            export_spec=""
+            while [[ "$#" -gt 0 && "$1" != "bash" ]]; do
+                case "$1" in
+                    --export=*) export_spec="${1#--export=}" ;;
+                esac
+                shift
+            done
+            task_environment=("PATH=$PATH" "SLURM_NODEID=0")
+            IFS=, read -ra entries <<< "$export_spec"
+            for entry in "${entries[@]}"; do
+                [[ "$entry" == *=* ]] && task_environment+=("$entry")
+            done
+            exec env -i "${task_environment[@]}" "$@"
+            """
+        )
+    )
+    for command in tools.iterdir():
+        command.chmod(0o755)
+
+    result = subprocess.run(
+        ["bash", "submit_joint_simgen_8gpu_2node.sh"],
+        cwd=Path.cwd(),
+        env={
+            **os.environ,
+            "PATH": f"{tools}:{os.environ['PATH']}",
+            "SLURM_JOB_ID": "12345",
+            "SLURM_JOB_NODELIST": "gpu[001-002]",
+        },
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert "image=/n/lab_storage/ydu_lab/jaysonzlin/Wan2.2_edited/cur.sif" in result.stdout
 
 
 def test_readme_documents_simgen_cache_preparation_and_training():
