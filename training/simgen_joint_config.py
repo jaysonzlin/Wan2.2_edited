@@ -11,6 +11,7 @@ from training.pc_config import _apply_override
 
 def validate_simgen_joint_config(config: dict) -> None:
     data, model, objective = (config.get(key, {}) for key in ("data", "model", "objective"))
+    training = config.get("training", {})
     if (data.get("width"), data.get("height")) != (480, 480):
         raise ValueError("data.width and data.height must both be 480")
     if data.get("num_frames") != 49 or data.get("num_points") != 2048:
@@ -49,6 +50,15 @@ def validate_simgen_joint_config(config: dict) -> None:
     }
     if config.get("optimizer") != expected_optimizer:
         raise ValueError("optimizer must use the established joint AdamW groups")
+    pretrained_pc_weights = training.get("pretrained_pc_weights")
+    if pretrained_pc_weights is not None and (
+        not isinstance(pretrained_pc_weights, str) or not pretrained_pc_weights.strip()
+    ):
+        raise ValueError("training.pretrained_pc_weights must be null or a non-empty path string")
+    if pretrained_pc_weights and training.get("resume_from_checkpoint"):
+        raise ValueError(
+            "training.pretrained_pc_weights and training.resume_from_checkpoint cannot both be set"
+        )
 
 
 def load_simgen_joint_config(path: str | Path, overrides: list[str]) -> dict:

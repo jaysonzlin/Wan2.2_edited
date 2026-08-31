@@ -1,5 +1,7 @@
 import json
+from pathlib import Path
 
+import pretrain_simgen_pc
 import torch
 from diffusers import DDPMScheduler
 
@@ -132,3 +134,38 @@ def test_sample_zero_visualization_writes_one_comparison_per_object(monkeypatch,
     ]
     assert all(shape == (49, 1, 2, 3) for shape, _, _, _ in saved)
     assert all(fps == 12 for _, _, _, fps in saved)
+
+
+def test_pretraining_builds_the_configured_simgen_train_and_validation_splits(monkeypatch):
+    calls = []
+
+    class Dataset:
+        def __init__(self, root, sample_ids, **kwargs):
+            calls.append((root, sample_ids, kwargs))
+
+    monkeypatch.setattr(pretrain_simgen_pc, "SimGenJointDataset", Dataset)
+    config = {
+        "data": {
+            "dataset_root": "simgen",
+            "train_start": 0,
+            "train_end": 127,
+            "validation_start": 490,
+            "validation_end": 499,
+            "num_points": 2048,
+            "utonia_cache_root": "cache",
+        }
+    }
+
+    pretrain_simgen_pc.build_datasets(config)
+
+    assert calls[0][1] == list(range(128))
+    assert calls[1][1] == list(range(490, 500))
+    assert calls[0][2]["utonia_cache_root"] == "cache"
+
+
+def test_pretraining_launcher_uses_four_gpus_and_latest_resume():
+    source = Path("submit_pretrain_simgen_pc_4gpu.sh").read_text()
+
+    assert "configs/accelerate/h200_4gpu.yaml" in source
+    assert "pretrain_simgen_pc.py" in source
+    assert "training.resume_from_checkpoint=latest" in source

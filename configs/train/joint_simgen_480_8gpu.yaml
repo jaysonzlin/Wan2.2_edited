@@ -40,6 +40,7 @@ training:
   checkpoint_every_steps: 1000
   checkpoints_total_limit: 2
   resume_from_checkpoint: null
+  pretrained_pc_weights: null
 sampling:
   num_inference_steps: 50
 visualization:

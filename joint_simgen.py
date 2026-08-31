@@ -70,6 +70,18 @@ def _shared_generator(device: torch.device | str, seed: int) -> torch.Generator:
     return torch.Generator(device=device).manual_seed(seed)
 
 
+def load_pretrained_pc_weights(pc_model: torch.nn.Module, weights_path: str | Path) -> None:
+    """Strictly initialize the PC branch from an exported PC-model state dict."""
+    path = Path(weights_path)
+    try:
+        state_dict = torch.load(path, map_location="cpu", weights_only=True)
+    except TypeError:  # pragma: no cover - retained for older PyTorch environments.
+        state_dict = torch.load(path, map_location="cpu")
+    if not isinstance(state_dict, dict):
+        raise ValueError(f"pretrained PC weights must be a state dict: {path}")
+    pc_model.load_state_dict(state_dict, strict=True)
+
+
 def _reduced_mean(accelerator, local_sum: torch.Tensor, local_count: int) -> torch.Tensor:
     """Reduce a sum/count pair without weighting ranks equally."""
     global_sum = accelerator.reduce(local_sum, reduction="sum")
@@ -308,6 +320,8 @@ def run_training(config: dict) -> None:
             history_frames=4, utonia_feature_dim=feature_width,
         ),
     )
+    if pretrained_pc_weights := training.get("pretrained_pc_weights"):
+        load_pretrained_pc_weights(model.pc_model, pretrained_pc_weights)
     optimizer = create_joint_optimizer(model, config["optimizer"])
     lr_scheduler = create_lr_scheduler(
         training["lr_scheduler"], optimizer, training["warmup_steps"], training["max_train_steps"],

@@ -50,6 +50,34 @@ validates every 250 steps, and writes to `outputs/joint_simgen_8gpu`. Each
 12-hour allocation resumes manually from `latest`; both nodes must see the
 shared output directory and the prepared single-GPU Utonia cache.
 
+### SimGen PC pretraining
+
+Pretrain only the history-conditioned point-cloud branch on the exact native
+SimGen point-cloud and frozen Utonia-feature pipeline used by joint training:
+
+```sh
+sbatch submit_pretrain_simgen_pc_4gpu.sh
+```
+
+This four-GPU single-node run trains samples 0–127 for 200,000 steps and
+validates samples 490–499 every 1,000 steps. It preserves only the two newest
+resumable `checkpoint-*` directories; `resume_from_checkpoint=latest` tries
+them newest-to-oldest if the latest state is incomplete. The best held-out PC
+trajectory loss writes the separate, never-pruned transfer artifact
+`outputs/simgen_pc_pretraining_4gpu/best_pc_model.pt`. Sample 0 comparison
+MP4s are written at each validation step under that output directory.
+
+Start joint training fresh from the selected PC branch with:
+
+```sh
+accelerate launch --config_file configs/accelerate/h200_4gpu.yaml \
+  joint_simgen.py --config configs/train/joint_simgen_480_4gpu.yaml \
+  training.pretrained_pc_weights=/absolute/path/best_pc_model.pt \
+  training.resume_from_checkpoint=null
+```
+
+Do not combine `training.pretrained_pc_weights` with a joint checkpoint resume.
+
 ## Kubric TI2V overfit training
 
 Run the custom trainer only on the remote H200 machine. It fine-tunes the full

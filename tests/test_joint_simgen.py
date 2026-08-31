@@ -19,6 +19,31 @@ class SumReducer:
         return next(self.reduced_values)
 
 
+def test_load_pretrained_pc_weights_strictly_initializes_pc_model(tmp_path):
+    """A PC-only export must replace every downstream PC-model parameter."""
+    pretrained = torch.nn.Linear(3, 2)
+    with torch.no_grad():
+        pretrained.weight.fill_(2.5)
+        pretrained.bias.fill_(-0.5)
+    weights_path = tmp_path / "pc_model.pt"
+    torch.save(pretrained.state_dict(), weights_path)
+    downstream = torch.nn.Linear(3, 2)
+
+    joint_simgen.load_pretrained_pc_weights(downstream, weights_path)
+
+    assert torch.equal(downstream.weight, torch.full((2, 3), 2.5))
+    assert torch.equal(downstream.bias, torch.full((2,), -0.5))
+
+
+def test_load_pretrained_pc_weights_rejects_incompatible_pc_model(tmp_path):
+    """A changed PC architecture must not silently receive a partial export."""
+    weights_path = tmp_path / "incompatible_pc_model.pt"
+    torch.save({"weight": torch.ones(2, 3)}, weights_path)
+
+    with pytest.raises(RuntimeError, match="Missing key.*bias"):
+        joint_simgen.load_pretrained_pc_weights(torch.nn.Linear(3, 2), weights_path)
+
+
 def test_prepare_cache_uses_sample_zero_panda_ball_can_sources(monkeypatch, tmp_path):
     metadata_path = tmp_path / "sample_0" / "metadata.json"
     metadata_path.parent.mkdir()
