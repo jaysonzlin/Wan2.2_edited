@@ -12,6 +12,7 @@ from training.wan_i2v_training import (
     load_frozen_encoders,
     make_flow_matching_batch,
     masked_velocity_mse,
+    pin_history_latents,
 )
 
 
@@ -94,6 +95,21 @@ class WanI2VTrainingTests(unittest.TestCase):
         self.assertFalse(batch.loss_mask[:, :, :1].any())
         self.assertTrue(batch.loss_mask[:, :, 1:].all())
         self.assertTrue(torch.equal(batch.latent_timesteps[:, :1], torch.zeros(1, 1)))
+
+    def test_pin_history_latents_replaces_exact_prefix(self):
+        noisy = torch.zeros(2, 6, 1, 1)
+        clean = torch.arange(12, dtype=torch.float32).reshape(2, 6, 1, 1)
+
+        result = pin_history_latents(noisy, clean, history_frames=4)
+
+        self.assertTrue(torch.equal(result[:, :4], clean[:, :4]))
+        self.assertTrue(torch.equal(result[:, 4:], noisy[:, 4:]))
+
+    def test_pin_history_latents_requires_a_target_slot(self):
+        latent = torch.zeros(2, 4, 1, 1)
+
+        with self.assertRaisesRegex(ValueError, "leave at least one target"):
+            pin_history_latents(latent, latent, history_frames=4)
 
     def test_masked_loss_ignores_the_conditioned_slot(self):
         prediction = torch.ones(1, 1, 2, 1, 1)

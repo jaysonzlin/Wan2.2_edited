@@ -85,6 +85,21 @@ def make_flow_matching_batch(
     )
 
 
+def pin_history_latents(
+    latent: torch.Tensor, history_latents: torch.Tensor, history_frames: int
+) -> torch.Tensor:
+    """Return a latent with its temporal history prefix reset to clean values."""
+    if latent.shape != history_latents.shape or latent.ndim != 4:
+        raise ValueError(
+            "latent and history_latents must have matching [C, T, H, W] shape"
+        )
+    if not 0 < history_frames < latent.shape[1]:
+        raise ValueError("history_frames must leave at least one target latent slot")
+    pinned = latent.clone()
+    pinned[:, :history_frames] = history_latents[:, :history_frames]
+    return pinned
+
+
 def masked_velocity_mse(
     prediction: torch.Tensor, target: torch.Tensor, mask: torch.Tensor
 ) -> torch.Tensor:
