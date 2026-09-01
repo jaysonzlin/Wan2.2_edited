@@ -1,0 +1,48 @@
+data:
+  sample_root: ../simgen/runs/panda_ball_can/sample_0/view_0
+  prompt: ""
+  num_frames: 49
+  width: 480
+  height: 480
+  dataloader_num_workers: 0
+
+model:
+  checkpoint_dir: Wan2.2-TI2V-5B
+  freeze_vae: true
+  freeze_text_encoder: true
+  gradient_checkpointing: true
+  flash_attention: true
+
+training:
+  seed: 42
+  train_batch_size: 1
+  gradient_accumulation_steps: 4
+  max_train_steps: 10000
+  learning_rate: 1.0e-5
+  weight_decay: 0.1
+  adam_beta1: 0.9
+  adam_beta2: 0.95
+  adam_epsilon: 1.0e-8
+  warmup_steps: 200
+  lr_scheduler: cosine
+  max_grad_norm: 1.0
+  text_dropout_probability: 0.1
+  use_wan_negative_prompt: false
+  time_shift: 5.0
+  num_train_timesteps: 1000
+  mixed_precision: bf16
+  checkpoint_every_steps: 500
+  checkpoints_total_limit: 2
+  visualization_every_steps: 500
+  visualization_seed: 42
+  visualization_cfg_scale: 1.0
+  resume_from_checkpoint: null
+
+logging:
+  output_dir: outputs/simgen_i2v_480_history_overfit
+  wandb_project: wan22-simgen-i2v-overfit
+  wandb_run_name: simgen-sample-0-history-480
+  log_every_steps: 1
+
+validation:
+  enabled: false
