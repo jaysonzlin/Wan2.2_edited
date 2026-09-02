@@ -9,7 +9,8 @@ def test_submit_script_is_valid_one_h200_requeue_launcher() -> None:
     script = script_path.read_text()
 
     assert result.returncode == 0, result.stderr
-    assert "#SBATCH --partition=gpu_h200" in script
+    assert "#SBATCH --partition=gpu_requeue" in script
+    assert "#SBATCH --constraint=h200" in script
     assert "#SBATCH --gres=gpu:1" in script
     assert "#SBATCH --requeue" in script
     assert "configs/accelerate/h200_single_gpu.yaml" in script

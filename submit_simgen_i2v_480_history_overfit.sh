@@ -1,6 +1,7 @@
 #!/bin/bash
 #SBATCH --job-name=simgen_i2v_480_history_overfit
-#SBATCH --partition=gpu_h200
+#SBATCH --partition=gpu_requeue
+#SBATCH --constraint=h200
 #SBATCH --gres=gpu:1
 #SBATCH --cpus-per-task=2
 #SBATCH --mem=64G
