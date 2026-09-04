@@ -1,5 +1,6 @@
 data:
-  sample_root: ../simgen/runs/panda_ball_can/sample_0/view_0
+  sample_root: ../simgen/runs/panda_ball_can
+  num_samples: 128
   prompt: ""
   num_frames: 49
   width: 480
@@ -16,8 +17,8 @@ model:
 training:
   seed: 42
   train_batch_size: 1
-  gradient_accumulation_steps: 4
-  max_train_steps: 10000
+  gradient_accumulation_steps: 1
+  max_train_steps: 40000
   learning_rate: 1.0e-5
   weight_decay: 0.1
   adam_beta1: 0.9
@@ -31,7 +32,7 @@ training:
   time_shift: 5.0
   num_train_timesteps: 10000
   mixed_precision: bf16
-  checkpoint_every_steps: 500
+  checkpoint_every_steps: 1000
   checkpoints_total_limit: 2
   visualization_every_steps: 500
   visualization_seed: 42
@@ -39,9 +40,9 @@ training:
   resume_from_checkpoint: null
 
 logging:
-  output_dir: outputs/simgen_i2v_480_history_overfit
+  output_dir: outputs/simgen_i2v_480_history_first128_8gpu_40k
   wandb_project: wan22-simgen-i2v-overfit
-  wandb_run_name: simgen-sample-0-history-480
+  wandb_run_name: simgen-first128-history-480-8gpu-40k
   log_every_steps: 1
 
 validation:

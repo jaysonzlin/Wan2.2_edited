@@ -36,7 +36,7 @@ training:
   lr_scheduler: constant
   max_grad_norm: 2.0
   mixed_precision: bf16
-  checkpoint_every_steps: 1000
+  checkpoint_every_steps: 250
   checkpoints_total_limit: 2
   resume_from_checkpoint: null
 sampling:

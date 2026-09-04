@@ -33,6 +33,13 @@ def parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
+def build_dataset(data: dict) -> SimGenI2VOverfitDataset:
+    """Build the configured ordered SimGen training set."""
+    return SimGenI2VOverfitDataset(
+        data["sample_root"], data["prompt"], num_samples=data.get("num_samples", 1)
+    )
+
+
 def create_optimizer(parameters, training: dict) -> torch.optim.AdamW:
     """Create AdamW using the configured I2V optimizer parameters."""
     return torch.optim.AdamW(
@@ -257,7 +264,7 @@ def main() -> None:
         logging["wandb_project"], config=config, init_kwargs=init_kwargs
     )
 
-    dataset = SimGenI2VOverfitDataset(data["sample_root"], data["prompt"])
+    dataset = build_dataset(data)
     dataloader = DataLoader(
         dataset,
         batch_size=training["train_batch_size"],
@@ -415,4 +422,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-

@@ -1,4 +1,4 @@
-"""Native RGB SimGen dataset for the single-sample I2V overfit experiment."""
+"""Native RGB SimGen dataset for the I2V overfit experiment."""
 
 from pathlib import Path
 
@@ -12,7 +12,7 @@ FRAME_TEMPLATE = "{frame:08d}.png"
 
 
 class SimGenI2VOverfitDataset(Dataset):
-    """Load the fixed 49-frame RGB video in a SimGen ``sample_0/view_0`` root."""
+    """Load fixed 49-frame RGB videos from ordered SimGen sample directories."""
 
     def __init__(
         self,
@@ -20,35 +20,52 @@ class SimGenI2VOverfitDataset(Dataset):
         prompt: str,
         expected_frames: int = 49,
         expected_size: tuple[int, int] = (480, 480),
+        num_samples: int = 1,
     ) -> None:
         self.sample_root = Path(sample_root)
         self.prompt = prompt
         self.expected_frames = expected_frames
         self.expected_size = expected_size
-        self._validate_sequence()
+        if num_samples < 1:
+            raise ValueError(f"num_samples must be positive, got {num_samples}")
+        self.sample_roots = self._sample_roots(num_samples)
+        for root in self.sample_roots:
+            self._validate_sequence(root)
 
-    def _validate_sequence(self) -> None:
-        if self.sample_root.parent.name != "sample_0":
+    def _sample_roots(self, num_samples: int) -> list[Path]:
+        if self.sample_root.name == "view_0":
+            if num_samples != 1 or self.sample_root.parent.name != "sample_0":
+                raise ValueError(
+                    f"{self.sample_root}: expected the view directory below sample_0"
+                )
+            return [self.sample_root]
+        return [
+            self.sample_root / f"sample_{sample}" / "view_0"
+            for sample in range(num_samples)
+        ]
+
+    def _validate_sequence(self, sample_root: Path) -> None:
+        if not sample_root.is_dir():
+            raise ValueError(f"Sample root does not exist: {sample_root}")
+        if sample_root.name != "view_0" or not sample_root.parent.name.startswith("sample_"):
             raise ValueError(
-                f"{self.sample_root}: expected the view directory below sample_0"
+                f"{sample_root}: expected a view_0 directory below a sample directory"
             )
-        if not self.sample_root.is_dir():
-            raise ValueError(f"Sample root does not exist: {self.sample_root}")
 
         expected_names = {
             FRAME_TEMPLATE.format(frame=frame) for frame in range(self.expected_frames)
         }
-        actual_names = {path.name for path in self.sample_root.glob("*.png")}
+        actual_names = {path.name for path in sample_root.glob("*.png")}
         unexpected_names = sorted(actual_names - expected_names)
         if unexpected_names:
             raise ValueError(
-                f"{self.sample_root}: unexpected PNG frames: {unexpected_names}"
+                f"{sample_root}: unexpected PNG frames: {unexpected_names}"
             )
 
         for frame in range(self.expected_frames):
-            path = self.sample_root / FRAME_TEMPLATE.format(frame=frame)
+            path = sample_root / FRAME_TEMPLATE.format(frame=frame)
             if not path.is_file():
-                raise ValueError(f"{self.sample_root}: missing required frame {path.name}")
+                raise ValueError(f"{sample_root}: missing required frame {path.name}")
             with Image.open(path) as image:
                 if image.mode != "RGB":
                     raise ValueError(f"{path}: expected RGB PNG, got mode {image.mode}")
@@ -60,19 +77,20 @@ class SimGenI2VOverfitDataset(Dataset):
                     )
 
     def __len__(self) -> int:
-        return 1
+        return len(self.sample_roots)
 
     def __getitem__(self, index: int) -> dict[str, torch.Tensor | str]:
-        if index != 0:
+        if index < 0 or index >= len(self):
             raise IndexError(index)
+        sample_root = self.sample_roots[index]
         frames = [
-            self._load_rgb(self.sample_root / FRAME_TEMPLATE.format(frame=frame))
+            self._load_rgb(sample_root / FRAME_TEMPLATE.format(frame=frame))
             for frame in range(self.expected_frames)
         ]
         return {
             "video": torch.stack(frames),
             "prompt": self.prompt,
-            "sample_id": self.sample_root.parent.name,
+            "sample_id": sample_root.parent.name,
         }
 
     @staticmethod

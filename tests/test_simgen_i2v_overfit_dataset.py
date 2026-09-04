@@ -29,6 +29,18 @@ def test_dataset_reads_ordered_native_rgb_frames(tmp_path: Path) -> None:
     assert item["prompt"] == ""
 
 
+def test_dataset_reads_requested_number_of_ordered_samples(tmp_path: Path) -> None:
+    for sample in range(2):
+        make_rgb_sequence(tmp_path / f"sample_{sample}" / "view_0")
+
+    dataset = SimGenI2VOverfitDataset(tmp_path, "prompt", num_samples=2)
+
+    assert len(dataset) == 2
+    assert dataset[0]["sample_id"] == "sample_0"
+    assert dataset[1]["sample_id"] == "sample_1"
+    assert dataset[1]["prompt"] == "prompt"
+
+
 def test_dataset_rejects_missing_native_frame(tmp_path: Path) -> None:
     sample_root = tmp_path / "sample_0" / "view_0"
     make_rgb_sequence(sample_root, skip={17})

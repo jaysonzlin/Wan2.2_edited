@@ -1,18 +1,18 @@
 #!/bin/bash
-#SBATCH --job-name=simgen_i2v_480_history_first128
+#SBATCH --job-name=pretrain_simgen_pc_8gpu
 #SBATCH --partition=gpu_requeue
 #SBATCH --constraint=h200
 #SBATCH --nodes=2
 #SBATCH --ntasks=2
 #SBATCH --ntasks-per-node=1
 #SBATCH --gres=gpu:4
-#SBATCH --cpus-per-task=16
-#SBATCH --mem=128G
+#SBATCH --cpus-per-task=4
+#SBATCH --mem=64G
 #SBATCH --time=12:00:00
 #SBATCH --requeue
 #SBATCH --open-mode=append
-#SBATCH --output=/n/lab_storage/ydu_lab/jaysonzlin/Wan2.2_edited/logs/simgen_i2v_480_history_first128_%j.out
-#SBATCH --error=/n/lab_storage/ydu_lab/jaysonzlin/Wan2.2_edited/logs/simgen_i2v_480_history_first128_%j.err
+#SBATCH --output=/n/lab_storage/ydu_lab/jaysonzlin/Wan2.2_edited/logs/pretrain_simgen_pc_8gpu_%j.out
+#SBATCH --error=/n/lab_storage/ydu_lab/jaysonzlin/Wan2.2_edited/logs/pretrain_simgen_pc_8gpu_%j.err
 
 set -euo pipefail
 
@@ -41,17 +41,6 @@ srun \
     --nodes=2 --ntasks=2 --ntasks-per-node=1 bash -lc '
     echo "Node rank: ${SLURM_NODEID}; host: $(hostname); CUDA_VISIBLE_DEVICES: ${CUDA_VISIBLE_DEVICES:-not set}"
     nvidia-smi
-
-    echo "--- GPU diagnostics before training ---"
-    nvidia-smi --query-gpu=index,uuid,pci.bus_id,memory.total,memory.used,memory.free \
-        --format=csv,noheader
-    nvidia-smi --query-compute-apps=pid,process_name,used_gpu_memory \
-        --format=csv,noheader || true
-    nvidia-smi --query-accounted-apps=pid,process_name,gpu_util,mem_util,max_memory_usage,time \
-        --format=csv,noheader || true
-    nvidia-smi pmon -c 1 || true
-    fuser -v /dev/nvidia0 /dev/nvidia1 /dev/nvidia2 /dev/nvidia3 || true
-
     export PYTHONUNBUFFERED=1
     exec singularity exec --nv \
         -B /n/holylabs \
@@ -63,7 +52,8 @@ srun \
             --machine_rank "${SLURM_NODEID}" \
             --main_process_ip "${MASTER_ADDR}" \
             --main_process_port "${MASTER_PORT}" \
-            train_i2v_simgen_480_overfit.py \
-            --config configs/train/overfit_simgen_i2v_480_history.yaml \
+            pretrain_simgen_pc.py \
+            --config configs/train/pretrain_simgen_pc_480_4gpu.yaml \
+            logging.output_dir=outputs/simgen_pc_pretraining_8gpu \
             training.resume_from_checkpoint=latest
 '

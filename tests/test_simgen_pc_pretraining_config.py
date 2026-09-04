@@ -17,6 +17,7 @@ def test_pretraining_config_loads_the_fixed_200k_experiment():
     assert config["data"]["validation_start"] == 490
     assert config["data"]["validation_end"] == 499
     assert config["training"]["max_train_steps"] == 200_000
+    assert config["training"]["checkpoint_every_steps"] == 250
     assert config["training"]["checkpoints_total_limit"] == 2
     assert config["training"]["resume_from_checkpoint"] is None
     assert config["validation"]["every_steps"] == 1000

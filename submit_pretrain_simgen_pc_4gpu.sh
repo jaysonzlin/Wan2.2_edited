@@ -1,8 +1,8 @@
 #!/bin/bash
 #SBATCH --job-name=pretrain_simgen_pc_4gpu
 #SBATCH --partition=gpu_requeue
-#SBATCH --constraint=h200
-#SBATCH --gres=gpu:4
+#SBATCH --nodes=1
+#SBATCH --gpus=nvidia_a100-sxm4-80gb:4
 #SBATCH --cpus-per-task=16
 #SBATCH --mem=128G
 #SBATCH --time=12:00:00

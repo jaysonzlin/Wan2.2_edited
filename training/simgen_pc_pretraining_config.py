@@ -44,7 +44,7 @@ def validate_simgen_pc_pretraining_config(config: dict) -> None:
     if objective.get("beta_schedule") != "linear":
         raise ValueError("objective.beta_schedule must be 'linear'")
     _require_exact(training.get("max_train_steps"), 200_000, "training.max_train_steps must be 200000")
-    _require_exact(training.get("checkpoint_every_steps"), 1000, "training.checkpoint_every_steps must be 1000")
+    _require_exact(training.get("checkpoint_every_steps"), 250, "training.checkpoint_every_steps must be 250")
     _require_exact(training.get("checkpoints_total_limit"), 2, "training.checkpoints_total_limit must be 2")
     resume = training.get("resume_from_checkpoint")
     if resume is not None and (not isinstance(resume, str) or not resume.strip()):

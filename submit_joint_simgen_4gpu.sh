@@ -32,7 +32,7 @@ exec singularity exec --nv \
     -B /n/holylabs \
     -B /net/holy-isilon \
     -B /tmp:/dev/shm \
-    "${PROJECT_DIR}/current.sif" \
+    "${PROJECT_DIR}/cur.sif" \
     accelerate launch \
         --config_file configs/accelerate/h200_4gpu.yaml \
         joint_simgen.py \

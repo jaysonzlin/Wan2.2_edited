@@ -166,6 +166,7 @@ def test_pretraining_builds_the_configured_simgen_train_and_validation_splits(mo
 def test_pretraining_launcher_uses_four_gpus_and_latest_resume():
     source = Path("submit_pretrain_simgen_pc_4gpu.sh").read_text()
 
+    assert "#SBATCH --nodes=1" in source
     assert "configs/accelerate/h200_4gpu.yaml" in source
     assert "pretrain_simgen_pc.py" in source
     assert "training.resume_from_checkpoint=latest" in source
