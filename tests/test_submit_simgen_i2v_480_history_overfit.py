@@ -1,5 +1,6 @@
 import os
 import subprocess
+import sys
 from pathlib import Path
 
 
@@ -62,3 +63,33 @@ def test_four_gpu_benchmark_launcher_requests_one_h200_node_and_starts_fresh(
     assert "training.resume_from_checkpoint" not in captured_args.read_text()
     assert "logging.output_dir=outputs/simgen_i2v_480_history_overfit_4gpu_1k" in captured_args.read_text()
     assert "logging.wandb_run_name=simgen-i2v-480-history-overfit-4gpu-1k" in captured_args.read_text()
+
+
+def test_nccl_smoke_launcher_observes_two_node_transport_selection() -> None:
+    """The NCCL smoke test must observe auto-selected two-node transport."""
+    script_path = Path("submit_nccl_smoke_8gpu_2node.sh")
+    smoke_path = Path("nccl_smoke.py")
+
+    result = subprocess.run(["bash", "-n", script_path], capture_output=True, text=True)
+    script = script_path.read_text()
+    compile_result = subprocess.run(
+        [sys.executable, "-m", "py_compile", smoke_path], capture_output=True, text=True
+    )
+    smoke_source = smoke_path.read_text()
+
+    assert result.returncode == 0, result.stderr
+    assert compile_result.returncode == 0, compile_result.stderr
+    assert "#SBATCH --nodes=2" in script
+    assert "#SBATCH --ntasks=2" in script
+    assert "#SBATCH --ntasks-per-node=1" in script
+    assert "#SBATCH --gres=gpu:4" in script
+    assert "configs/accelerate/h200_8gpu_2node.yaml" in script
+    assert 'NCCL_DEBUG=INFO' in script
+    assert 'NCCL_DEBUG_SUBSYS=INIT,NET,GRAPH' in script
+    assert 'NCCL_DEBUG_FILE=' in script
+    assert 'NCCL_SOCKET_IFNAME' not in script
+    assert 'NCCL_IB_HCA' not in script
+    assert 'NCCL_IB_DISABLE' not in script
+    assert 'nccl_smoke.py' in script
+    assert 'dist.init_process_group("nccl")' in smoke_source
+    assert 'dist.all_reduce(tensor)' in smoke_source
