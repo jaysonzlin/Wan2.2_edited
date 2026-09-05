@@ -95,6 +95,10 @@ def test_nccl_smoke_launcher_observes_two_node_transport_selection(
     assert '-B /dev/infiniband' in script
     assert 'ibv_devices || true' in script
     assert 'ldconfig -p | grep libibverbs || true' in script
+    assert 'RDMA_LIBRARIES' in script
+    assert 'RDMA_LIBRARY_BIND_ARGS' in script
+    assert '"${RDMA_LIBRARY_BIND_ARGS[@]}"' in script
+    assert 'bash "${RDMA_LIBRARIES[@]}"' in script
     assert 'nccl_smoke.py' in script
     assert 'dist.init_process_group("nccl")' in smoke_source
     assert 'dist.all_reduce(tensor)' in smoke_source
@@ -111,6 +115,13 @@ def test_nccl_smoke_launcher_observes_two_node_transport_selection(
     for command, contents in {
         "scontrol": "#!/bin/bash\nprintf 'node-a\\nnode-b\\n'\n",
         "getent": "#!/bin/bash\nprintf '10.0.0.1 STREAM node-a\\n'\n",
+        "ldconfig": (
+            "#!/bin/bash\n"
+            "printf '%s\\n' \\\n"
+            "  'libibverbs.so.1 => /usr/lib64/libibverbs.so.1' \\\n"
+            "  'libmlx5.so.1 => /usr/lib64/libmlx5.so.1' \\\n"
+            "  'librdmacm.so.1 => /usr/lib64/librdmacm.so.1'\n"
+        ),
         "nvidia-smi": "#!/bin/bash\nexit 0\n",
         "srun": (
             "#!/bin/bash\n"
