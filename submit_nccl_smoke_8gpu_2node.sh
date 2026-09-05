@@ -57,6 +57,13 @@ srun \
         echo ---Container-RDMA-diagnostics---
         ls -l /dev/infiniband || true
         ibv_devices || true
+        ls -l /sys/class/infiniband_verbs || true
+        for RDMA_PATH in /sys/class/infiniband/*; do
+            [[ -e \${RDMA_PATH} ]] || continue
+            RDMA_DEVICE=\$(basename \${RDMA_PATH})
+            echo ---ibv_devinfo-\${RDMA_DEVICE}---
+            ibv_devinfo -d \${RDMA_DEVICE} || true
+        done
         ldconfig -p | grep libibverbs || true
 
         exec accelerate launch \

@@ -95,6 +95,8 @@ def test_nccl_smoke_launcher_observes_two_node_transport_selection(
     assert 'NCCL_IB_DISABLE' not in script
     assert '-B /dev/infiniband' in script
     assert 'ibv_devices || true' in script
+    assert 'ls -l /sys/class/infiniband_verbs || true' in script
+    assert r'ibv_devinfo -d \${RDMA_DEVICE} || true' in script
     assert 'ldconfig -p | grep libibverbs || true' in script
     assert 'RDMA_LIBRARIES' not in script
     assert 'RDMA_LIBRARY_BIND_ARGS' not in script
