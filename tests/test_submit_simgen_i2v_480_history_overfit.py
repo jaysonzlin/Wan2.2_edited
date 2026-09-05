@@ -65,7 +65,9 @@ def test_four_gpu_benchmark_launcher_requests_one_h200_node_and_starts_fresh(
     assert "logging.wandb_run_name=simgen-i2v-480-history-overfit-4gpu-1k" in captured_args.read_text()
 
 
-def test_nccl_smoke_launcher_observes_two_node_transport_selection() -> None:
+def test_nccl_smoke_launcher_observes_two_node_transport_selection(
+    tmp_path: Path,
+) -> None:
     """The NCCL smoke test must observe auto-selected two-node transport."""
     script_path = Path("submit_nccl_smoke_8gpu_2node.sh")
     smoke_path = Path("nccl_smoke.py")
@@ -96,3 +98,56 @@ def test_nccl_smoke_launcher_observes_two_node_transport_selection() -> None:
     assert 'nccl_smoke.py' in script
     assert 'dist.init_process_group("nccl")' in smoke_source
     assert 'dist.all_reduce(tensor)' in smoke_source
+
+    test_script_path = tmp_path / script_path.name
+    test_script_path.write_text(
+        script.replace(
+            'PROJECT_DIR="/n/lab_storage/ydu_lab/jaysonzlin/Wan2.2_edited"',
+            f'PROJECT_DIR="{tmp_path}"',
+        )
+    )
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    for command, contents in {
+        "scontrol": "#!/bin/bash\nprintf 'node-a\\nnode-b\\n'\n",
+        "getent": "#!/bin/bash\nprintf '10.0.0.1 STREAM node-a\\n'\n",
+        "nvidia-smi": "#!/bin/bash\nexit 0\n",
+        "srun": (
+            "#!/bin/bash\n"
+            "while (($#)); do\n"
+            "    if [[ $1 == bash ]]; then\n"
+            "        shift\n"
+            "        exec bash \"$@\"\n"
+            "    fi\n"
+            "    shift\n"
+            "done\n"
+        ),
+        "singularity": (
+            "#!/bin/bash\n"
+            "while (($#)); do\n"
+            "    if [[ $1 == bash ]]; then\n"
+            "        shift\n"
+            "        exec bash \"$@\"\n"
+            "    fi\n"
+            "    shift\n"
+            "done\n"
+        ),
+        "accelerate": "#!/bin/bash\nexit 0\n",
+    }.items():
+        command_path = bin_dir / command
+        command_path.write_text(contents)
+        command_path.chmod(0o755)
+
+    result = subprocess.run(
+        ["bash", test_script_path],
+        capture_output=True,
+        text=True,
+        env=os.environ
+        | {
+            "PATH": f"{bin_dir}:{os.environ['PATH']}",
+            "SLURM_JOB_ID": "12345",
+            "SLURM_JOB_NODELIST": "node-a,node-b",
+        },
+    )
+
+    assert result.returncode == 0, result.stderr

@@ -54,7 +54,7 @@ srun \
         -B /dev/infiniband \
         "${PROJECT_DIR}/cur.sif" \
         bash -lc "
-        echo '--- Container RDMA diagnostics ---'
+        echo ---Container-RDMA-diagnostics---
         ls -l /dev/infiniband || true
         ibv_devices || true
         ldconfig -p | grep libibverbs || true
