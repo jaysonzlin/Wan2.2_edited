@@ -12,6 +12,12 @@ From: nvidia/cuda:12.9.2-devel-ubuntu22.04
         ninja-build \
         ca-certificates \
         pkg-config \
+        libibverbs1 \
+        ibverbs-providers \
+        librdmacm1 \
+        libnl-3-200 \
+        libnl-route-3-200 \
+        ibverbs-utils \
         libglvnd0 \
         libglvnd-dev \
         libgl1 \

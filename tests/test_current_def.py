@@ -24,6 +24,20 @@ def test_current_def_declares_a_matching_utonia_runtime():
     assert "./Miniforge3-Linux-x86_64.sh /opt/miniforge.sh" not in definition
 
 
+def test_current_def_installs_the_rdma_runtime_needed_by_nccl():
+    definition = Path("current.def").read_text()
+
+    for package in (
+        "libibverbs1",
+        "ibverbs-providers",
+        "librdmacm1",
+        "libnl-3-200",
+        "libnl-route-3-200",
+        "ibverbs-utils",
+    ):
+        assert package in definition
+
+
 def test_project_dependencies_cap_transformers_for_torch_2_4():
     definition = Path("pyproject.toml").read_text()
 

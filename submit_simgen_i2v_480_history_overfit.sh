@@ -57,6 +57,7 @@ srun \
         -B /n/holylabs \
         -B /net/holy-isilon \
         -B /tmp:/dev/shm \
+        -B /dev/infiniband \
         "${PROJECT_DIR}/cur.sif" \
         accelerate launch \
             --config_file configs/accelerate/h200_8gpu_2node.yaml \

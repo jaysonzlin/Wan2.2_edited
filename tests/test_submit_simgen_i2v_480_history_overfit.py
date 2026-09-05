@@ -22,6 +22,7 @@ def test_submit_script_is_valid_eight_h200_requeue_launcher() -> None:
     assert "srun" in script
     assert '--machine_rank "${SLURM_NODEID}"' in script
     assert '"${PROJECT_DIR}/cur.sif"' in script
+    assert '-B /dev/infiniband' in script
     assert "train_i2v_simgen_480_overfit.py" in script
     assert "training.resume_from_checkpoint=latest" in script
 
