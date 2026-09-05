@@ -101,6 +101,9 @@ def test_nccl_smoke_launcher_observes_two_node_transport_selection(
     assert '-B /dev/infiniband' in script
     assert 'ibv_devices || true' in script
     assert script.count('python3 rdma_open_probe.py || true') == 2
+    assert script.count('id -Z || true') == 2
+    assert script.count('cat /proc/self/uid_map || true') == 2
+    assert script.count('ls -lZ /dev/infiniband/uverbs0 || true') == 2
     assert 'ls -l /sys/class/infiniband_verbs || true' in script
     assert r'ibv_devinfo -d \${RDMA_DEVICE} || true' in script
     assert 'ldconfig -p | grep libibverbs || true' in script
