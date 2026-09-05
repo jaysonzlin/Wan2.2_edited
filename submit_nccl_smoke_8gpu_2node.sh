@@ -34,6 +34,7 @@ export NCCL_DEBUG=INFO
 export NCCL_DEBUG_SUBSYS=INIT,NET,GRAPH
 export NCCL_DEBUG_FILE="${PROJECT_DIR}/logs/nccl-smoke-${SLURM_JOB_ID}/nccl.%h.%p.log"
 export TORCH_DISTRIBUTED_DEBUG=DETAIL
+export RDMA_PROVIDER_CONFIG_DIR="${RDMA_PROVIDER_CONFIG_DIR:-/etc/libibverbs.d}"
 
 RDMA_LIBRARIES=()
 while IFS= read -r RDMA_LIBRARY; do
@@ -45,6 +46,30 @@ done < <(
 )
 if (( ${#RDMA_LIBRARIES[@]} == 0 )); then
     echo "Unable to locate host RDMA libraries with ldconfig" >&2
+    exit 1
+fi
+
+RDMA_PROVIDER_FOUND=false
+for RDMA_PROVIDER_CONFIG in "${RDMA_PROVIDER_CONFIG_DIR}"/*mlx5*.driver; do
+    [[ -f "${RDMA_PROVIDER_CONFIG}" ]] || continue
+    RDMA_PROVIDER_NAME=$(tr -d '\n' < "${RDMA_PROVIDER_CONFIG}")
+    RDMA_PROVIDER_PATH=$(ldconfig -p | awk -v name="${RDMA_PROVIDER_NAME}" '$1 == name { print $NF; exit }')
+    if [[ -z "${RDMA_PROVIDER_PATH}" ]]; then
+        for RDMA_LIBRARY_DIR in /lib64 /usr/lib64; do
+            RDMA_PROVIDER_PATH="${RDMA_LIBRARY_DIR}/${RDMA_PROVIDER_NAME}"
+            [[ -f "${RDMA_PROVIDER_PATH}" ]] && break
+            RDMA_PROVIDER_PATH=""
+        done
+    fi
+    if [[ -z "${RDMA_PROVIDER_PATH}" ]]; then
+        echo "Unable to locate RDMA provider ${RDMA_PROVIDER_NAME}" >&2
+        exit 1
+    fi
+    RDMA_LIBRARIES+=("${RDMA_PROVIDER_PATH}")
+    RDMA_PROVIDER_FOUND=true
+done
+if [[ "${RDMA_PROVIDER_FOUND}" != true ]]; then
+    echo "Unable to locate an mlx5 RDMA provider configuration" >&2
     exit 1
 fi
 
@@ -70,8 +95,8 @@ srun \
         )
     done
     RDMA_CONFIG_BIND_ARGS=()
-    if [[ -d /etc/libibverbs.d ]]; then
-        RDMA_CONFIG_BIND_ARGS=(-B /etc/libibverbs.d)
+    if [[ -d "${RDMA_PROVIDER_CONFIG_DIR}" ]]; then
+        RDMA_CONFIG_BIND_ARGS=(-B "${RDMA_PROVIDER_CONFIG_DIR}:/etc/libibverbs.d")
     fi
 
     exec singularity exec --nv \

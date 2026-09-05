@@ -103,6 +103,8 @@ def test_nccl_smoke_launcher_observes_two_node_transport_selection(
     assert r'libnl-3\.so' in script
     assert r'libnl-route-3\.so' in script
     assert r'export LD_LIBRARY_PATH=/tmp\${LD_LIBRARY_PATH' in script
+    assert 'RDMA_PROVIDER_CONFIG_DIR' in script
+    assert 'RDMA_PROVIDER_NAME' in script
     assert 'ldd /tmp/libibverbs.so.1 || true' in script
     assert 'nccl_smoke.py' in script
     assert 'dist.init_process_group("nccl")' in smoke_source
@@ -119,12 +121,16 @@ def test_nccl_smoke_launcher_observes_two_node_transport_selection(
     bin_dir.mkdir()
     rdma_library_dir = tmp_path / "rdma-libs"
     rdma_library_dir.mkdir()
+    provider_config_dir = tmp_path / "libibverbs.d"
+    provider_config_dir.mkdir()
+    (provider_config_dir / "mlx5.driver").write_text("libmlx5-rdmav57.so\n")
     for library_name in (
         "libibverbs.so.1",
         "libmlx5.so.1",
         "librdmacm.so.1",
         "libnl-3.so.200",
         "libnl-route-3.so.200",
+        "libmlx5-rdmav57.so",
     ):
         (rdma_library_dir / library_name).write_text("")
     for command, contents in {
@@ -137,7 +143,8 @@ def test_nccl_smoke_launcher_observes_two_node_transport_selection(
             f"  'libmlx5.so.1 => {rdma_library_dir / 'libmlx5.so.1'}' \\\n"
             f"  'librdmacm.so.1 => {rdma_library_dir / 'librdmacm.so.1'}' \\\n"
             f"  'libnl-3.so.200 => {rdma_library_dir / 'libnl-3.so.200'}' \\\n"
-            f"  'libnl-route-3.so.200 => {rdma_library_dir / 'libnl-route-3.so.200'}'\n"
+            f"  'libnl-route-3.so.200 => {rdma_library_dir / 'libnl-route-3.so.200'}' \\\n"
+            f"  'libmlx5-rdmav57.so => {rdma_library_dir / 'libmlx5-rdmav57.so'}'\n"
         ),
         "nvidia-smi": "#!/bin/bash\nexit 0\n",
         "srun": (
@@ -175,6 +182,7 @@ def test_nccl_smoke_launcher_observes_two_node_transport_selection(
             "PATH": f"{bin_dir}:{os.environ['PATH']}",
             "SLURM_JOB_ID": "12345",
             "SLURM_JOB_NODELIST": "node-a,node-b",
+            "RDMA_PROVIDER_CONFIG_DIR": str(provider_config_dir),
         },
     )
 
