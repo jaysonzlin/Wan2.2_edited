@@ -40,7 +40,7 @@ while IFS= read -r RDMA_LIBRARY; do
     RDMA_LIBRARIES+=("${RDMA_LIBRARY}")
 done < <(
     ldconfig -p \
-        | awk '/libibverbs\.so|libmlx5.*\.so|librdmacm\.so/ { print $NF }' \
+        | awk '/libibverbs\.so|libmlx5.*\.so|librdmacm\.so|libnl-3\.so|libnl-route-3\.so/ { print $NF }' \
         | sort -u
 )
 if (( ${#RDMA_LIBRARIES[@]} == 0 )); then
@@ -89,7 +89,7 @@ srun \
         ldconfig -p | grep libibverbs || true
         ls -l /tmp/libibverbs.so.1 || true
         ldd /tmp/libibverbs.so.1 || true
-        export LD_LIBRARY_PATH=/tmp${LD_LIBRARY_PATH:+:${LD_LIBRARY_PATH}}
+        export LD_LIBRARY_PATH=/tmp\${LD_LIBRARY_PATH:+:\${LD_LIBRARY_PATH}}
 
         exec accelerate launch \
             --config_file configs/accelerate/h200_8gpu_2node.yaml \
