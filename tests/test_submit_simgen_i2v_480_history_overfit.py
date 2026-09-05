@@ -85,6 +85,7 @@ def test_nccl_smoke_launcher_observes_two_node_transport_selection(
     smoke_source = smoke_path.read_text()
 
     assert result.returncode == 0, result.stderr
+
     assert compile_result.returncode == 0, compile_result.stderr
     assert probe_compile_result.returncode == 0, probe_compile_result.stderr
     assert "#SBATCH --nodes=2" in script
@@ -169,3 +170,23 @@ def test_nccl_smoke_launcher_observes_two_node_transport_selection(
     )
 
     assert result.returncode == 0, result.stderr
+
+
+def test_nccl_smoke_two_gpu_launcher_isolates_one_gpu_per_node() -> None:
+    script_path = Path("submit_nccl_smoke_2gpu_2node.sh")
+    config_path = Path("configs/accelerate/h200_2gpu_2node.yaml")
+
+    result = subprocess.run(["bash", "-n", script_path], capture_output=True, text=True)
+    script = script_path.read_text()
+    config = config_path.read_text()
+
+    assert result.returncode == 0, result.stderr
+    assert "#SBATCH --nodes=2" in script
+    assert "#SBATCH --ntasks=2" in script
+    assert "#SBATCH --ntasks-per-node=1" in script
+    assert "#SBATCH --gres=gpu:1" in script
+    assert "configs/accelerate/h200_2gpu_2node.yaml" in script
+    assert '-B /dev/infiniband' in script
+    assert script.count("python3 rdma_open_probe.py || true") == 2
+    assert "num_machines: 2" in config
+    assert "num_processes: 2" in config
