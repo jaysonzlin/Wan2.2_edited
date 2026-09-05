@@ -46,6 +46,8 @@ srun \
     echo "Node rank: ${SLURM_NODEID}; host: $(hostname); CUDA_VISIBLE_DEVICES: ${CUDA_VISIBLE_DEVICES:-not set}"
     nvidia-smi topo -m
     ls -l /sys/class/infiniband || true
+    echo ---Host-RDMA-open-probe---
+    python3 rdma_open_probe.py || true
 
     exec singularity exec --nv \
         -B /n/holylabs \
@@ -57,6 +59,8 @@ srun \
         echo ---Container-RDMA-diagnostics---
         ls -l /dev/infiniband || true
         ibv_devices || true
+        echo ---Container-RDMA-open-probe---
+        python3 rdma_open_probe.py || true
         ls -l /sys/class/infiniband_verbs || true
         for RDMA_PATH in /sys/class/infiniband/*; do
             [[ -e \${RDMA_PATH} ]] || continue

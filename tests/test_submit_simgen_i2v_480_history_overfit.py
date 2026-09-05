@@ -72,16 +72,21 @@ def test_nccl_smoke_launcher_observes_two_node_transport_selection(
     """The NCCL smoke test must observe auto-selected two-node transport."""
     script_path = Path("submit_nccl_smoke_8gpu_2node.sh")
     smoke_path = Path("nccl_smoke.py")
+    rdma_probe_path = Path("rdma_open_probe.py")
 
     result = subprocess.run(["bash", "-n", script_path], capture_output=True, text=True)
     script = script_path.read_text()
     compile_result = subprocess.run(
         [sys.executable, "-m", "py_compile", smoke_path], capture_output=True, text=True
     )
+    probe_compile_result = subprocess.run(
+        [sys.executable, "-m", "py_compile", rdma_probe_path], capture_output=True, text=True
+    )
     smoke_source = smoke_path.read_text()
 
     assert result.returncode == 0, result.stderr
     assert compile_result.returncode == 0, compile_result.stderr
+    assert probe_compile_result.returncode == 0, probe_compile_result.stderr
     assert "#SBATCH --nodes=2" in script
     assert "#SBATCH --ntasks=2" in script
     assert "#SBATCH --ntasks-per-node=1" in script
@@ -95,6 +100,7 @@ def test_nccl_smoke_launcher_observes_two_node_transport_selection(
     assert 'NCCL_IB_DISABLE' not in script
     assert '-B /dev/infiniband' in script
     assert 'ibv_devices || true' in script
+    assert script.count('python3 rdma_open_probe.py || true') == 2
     assert 'ls -l /sys/class/infiniband_verbs || true' in script
     assert r'ibv_devinfo -d \${RDMA_DEVICE} || true' in script
     assert 'ldconfig -p | grep libibverbs || true' in script
@@ -106,6 +112,7 @@ def test_nccl_smoke_launcher_observes_two_node_transport_selection(
     assert 'nccl_smoke.py' in script
     assert 'dist.init_process_group("nccl")' in smoke_source
     assert 'dist.all_reduce(tensor)' in smoke_source
+    assert 'RDMA_OPEN_FAILED' in rdma_probe_path.read_text()
 
     test_script_path = tmp_path / script_path.name
     test_script_path.write_text(
