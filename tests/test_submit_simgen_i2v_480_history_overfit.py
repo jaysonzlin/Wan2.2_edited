@@ -190,3 +190,19 @@ def test_nccl_smoke_two_gpu_launcher_isolates_one_gpu_per_node() -> None:
     assert script.count("python3 rdma_open_probe.py || true") == 2
     assert "num_machines: 2" in config
     assert "num_processes: 2" in config
+
+
+def test_nccl_smoke_four_gpu_launcher_isolates_single_node_transport() -> None:
+    script_path = Path("submit_nccl_smoke_4gpu_1node.sh")
+
+    result = subprocess.run(["bash", "-n", script_path], capture_output=True, text=True)
+    script = script_path.read_text()
+
+    assert result.returncode == 0, result.stderr
+    assert "#SBATCH --nodes=1" in script
+    assert "#SBATCH --ntasks=1" in script
+    assert "#SBATCH --ntasks-per-node=1" in script
+    assert "#SBATCH --gres=gpu:4" in script
+    assert "configs/accelerate/h200_4gpu.yaml" in script
+    assert '-B /dev/infiniband' in script
+    assert script.count("python3 rdma_open_probe.py || true") == 2
