@@ -97,8 +97,11 @@ def test_nccl_smoke_launcher_observes_two_node_transport_selection(
     assert 'ldconfig -p | grep libibverbs || true' in script
     assert 'RDMA_LIBRARIES' in script
     assert 'RDMA_LIBRARY_BIND_ARGS' in script
+    assert 'RDMA_LIBRARY_REALPATH' in script
     assert '"${RDMA_LIBRARY_BIND_ARGS[@]}"' in script
     assert 'bash "${RDMA_LIBRARIES[@]}"' in script
+    assert 'LD_LIBRARY_PATH=/tmp' in script
+    assert 'ldd /tmp/libibverbs.so.1 || true' in script
     assert 'nccl_smoke.py' in script
     assert 'dist.init_process_group("nccl")' in smoke_source
     assert 'dist.all_reduce(tensor)' in smoke_source
@@ -112,15 +115,19 @@ def test_nccl_smoke_launcher_observes_two_node_transport_selection(
     )
     bin_dir = tmp_path / "bin"
     bin_dir.mkdir()
+    rdma_library_dir = tmp_path / "rdma-libs"
+    rdma_library_dir.mkdir()
+    for library_name in ("libibverbs.so.1", "libmlx5.so.1", "librdmacm.so.1"):
+        (rdma_library_dir / library_name).write_text("")
     for command, contents in {
         "scontrol": "#!/bin/bash\nprintf 'node-a\\nnode-b\\n'\n",
         "getent": "#!/bin/bash\nprintf '10.0.0.1 STREAM node-a\\n'\n",
         "ldconfig": (
             "#!/bin/bash\n"
             "printf '%s\\n' \\\n"
-            "  'libibverbs.so.1 => /usr/lib64/libibverbs.so.1' \\\n"
-            "  'libmlx5.so.1 => /usr/lib64/libmlx5.so.1' \\\n"
-            "  'librdmacm.so.1 => /usr/lib64/librdmacm.so.1'\n"
+            f"  'libibverbs.so.1 => {rdma_library_dir / 'libibverbs.so.1'}' \\\n"
+            f"  'libmlx5.so.1 => {rdma_library_dir / 'libmlx5.so.1'}' \\\n"
+            f"  'librdmacm.so.1 => {rdma_library_dir / 'librdmacm.so.1'}'\n"
         ),
         "nvidia-smi": "#!/bin/bash\nexit 0\n",
         "srun": (

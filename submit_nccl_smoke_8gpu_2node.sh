@@ -40,7 +40,7 @@ while IFS= read -r RDMA_LIBRARY; do
     RDMA_LIBRARIES+=("${RDMA_LIBRARY}")
 done < <(
     ldconfig -p \
-        | awk '/libibverbs\.so\.1|libmlx5\.so\.1|librdmacm\.so\.1/ { print $NF }' \
+        | awk '/libibverbs\.so|libmlx5.*\.so|librdmacm\.so/ { print $NF }' \
         | sort -u
 )
 if (( ${#RDMA_LIBRARIES[@]} == 0 )); then
@@ -63,7 +63,11 @@ srun \
 
     RDMA_LIBRARY_BIND_ARGS=()
     for RDMA_LIBRARY in "$@"; do
-        RDMA_LIBRARY_BIND_ARGS+=(-B "${RDMA_LIBRARY}")
+        RDMA_LIBRARY_NAME=$(basename "${RDMA_LIBRARY}")
+        RDMA_LIBRARY_REALPATH=$(realpath "${RDMA_LIBRARY}")
+        RDMA_LIBRARY_BIND_ARGS+=(
+            -B "${RDMA_LIBRARY_REALPATH}:/tmp/${RDMA_LIBRARY_NAME}"
+        )
     done
     RDMA_CONFIG_BIND_ARGS=()
     if [[ -d /etc/libibverbs.d ]]; then
@@ -83,6 +87,9 @@ srun \
         ls -l /dev/infiniband || true
         ibv_devices || true
         ldconfig -p | grep libibverbs || true
+        ls -l /tmp/libibverbs.so.1 || true
+        ldd /tmp/libibverbs.so.1 || true
+        export LD_LIBRARY_PATH=/tmp${LD_LIBRARY_PATH:+:${LD_LIBRARY_PATH}}
 
         exec accelerate launch \
             --config_file configs/accelerate/h200_8gpu_2node.yaml \
