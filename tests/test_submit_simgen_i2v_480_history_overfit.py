@@ -90,6 +90,9 @@ def test_nccl_smoke_launcher_observes_two_node_transport_selection() -> None:
     assert 'NCCL_SOCKET_IFNAME' not in script
     assert 'NCCL_IB_HCA' not in script
     assert 'NCCL_IB_DISABLE' not in script
+    assert '-B /dev/infiniband' in script
+    assert 'ibv_devices || true' in script
+    assert 'ldconfig -p | grep libibverbs || true' in script
     assert 'nccl_smoke.py' in script
     assert 'dist.init_process_group("nccl")' in smoke_source
     assert 'dist.all_reduce(tensor)' in smoke_source

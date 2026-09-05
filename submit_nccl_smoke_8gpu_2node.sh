@@ -51,11 +51,19 @@ srun \
         -B /n/holylabs \
         -B /net/holy-isilon \
         -B /tmp:/dev/shm \
+        -B /dev/infiniband \
         "${PROJECT_DIR}/cur.sif" \
-        accelerate launch \
+        bash -lc "
+        echo '--- Container RDMA diagnostics ---'
+        ls -l /dev/infiniband || true
+        ibv_devices || true
+        ldconfig -p | grep libibverbs || true
+
+        exec accelerate launch \
             --config_file configs/accelerate/h200_8gpu_2node.yaml \
-            --machine_rank "${SLURM_NODEID}" \
-            --main_process_ip "${MASTER_ADDR}" \
-            --main_process_port "${MASTER_PORT}" \
+            --machine_rank \"${SLURM_NODEID}\" \
+            --main_process_ip \"${MASTER_ADDR}\" \
+            --main_process_port \"${MASTER_PORT}\" \
             nccl_smoke.py
+        "
 '
