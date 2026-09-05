@@ -34,59 +34,11 @@ export NCCL_DEBUG=INFO
 export NCCL_DEBUG_SUBSYS=INIT,NET,GRAPH
 export NCCL_DEBUG_FILE="${PROJECT_DIR}/logs/nccl-smoke-${SLURM_JOB_ID}/nccl.%h.%p.log"
 export TORCH_DISTRIBUTED_DEBUG=DETAIL
-export RDMA_PROVIDER_CONFIG_DIR="${RDMA_PROVIDER_CONFIG_DIR:-/etc/libibverbs.d}"
-
-RDMA_LIBRARIES=()
-while IFS= read -r RDMA_LIBRARY; do
-    RDMA_LIBRARIES+=("${RDMA_LIBRARY}")
-done < <(
-    ldconfig -p \
-        | awk '/libibverbs\.so|libmlx5.*\.so|librdmacm\.so|libnl-3\.so|libnl-route-3\.so/ { print $NF }' \
-        | sort -u
-)
-if (( ${#RDMA_LIBRARIES[@]} == 0 )); then
-    echo "Unable to locate host RDMA libraries with ldconfig" >&2
-    exit 1
-fi
-
-RDMA_PROVIDER_FOUND=false
-for RDMA_PROVIDER_CONFIG in "${RDMA_PROVIDER_CONFIG_DIR}"/*mlx5*.driver; do
-    [[ -f "${RDMA_PROVIDER_CONFIG}" ]] || continue
-    RDMA_PROVIDER_DRIVER=$(awk '$1 == "driver" { print $2; exit }' "${RDMA_PROVIDER_CONFIG}")
-    if [[ "${RDMA_PROVIDER_DRIVER}" != mlx5 ]]; then
-        echo "Unsupported RDMA provider driver ${RDMA_PROVIDER_DRIVER}" >&2
-        exit 1
-    fi
-    RDMA_PROVIDER_PATH=$(
-        ldconfig -p \
-            | awk '$1 ~ /^libmlx5-rdmav[0-9]+\.so/ { print $NF; exit }'
-    )
-    if [[ -z "${RDMA_PROVIDER_PATH}" ]]; then
-        for RDMA_PROVIDER_CANDIDATE in \
-            /lib64/libmlx5-rdmav*.so \
-            /usr/lib64/libmlx5-rdmav*.so; do
-            [[ -f "${RDMA_PROVIDER_CANDIDATE}" ]] || continue
-            RDMA_PROVIDER_PATH="${RDMA_PROVIDER_CANDIDATE}"
-            break
-        done
-    fi
-    if [[ -z "${RDMA_PROVIDER_PATH}" ]]; then
-        echo "Unable to locate the mlx5 RDMA provider library" >&2
-        exit 1
-    fi
-    RDMA_LIBRARIES+=("${RDMA_PROVIDER_PATH}")
-    RDMA_PROVIDER_FOUND=true
-done
-if [[ "${RDMA_PROVIDER_FOUND}" != true ]]; then
-    echo "Unable to locate an mlx5 RDMA provider configuration" >&2
-    exit 1
-fi
 
 echo "Job ID: ${SLURM_JOB_ID}"
 echo "Nodes: ${SLURM_JOB_NODELIST}"
 echo "Rendezvous: ${MASTER_ADDR}:${MASTER_PORT}"
 echo "NCCL logs: ${PROJECT_DIR}/logs/nccl-smoke-${SLURM_JOB_ID}"
-printf 'Host RDMA libraries:\n%s\n' "${RDMA_LIBRARIES[@]}"
 
 srun \
     --export=ALL,PROJECT_DIR="${PROJECT_DIR}",MASTER_ADDR="${MASTER_ADDR}",MASTER_PORT="${MASTER_PORT}",NCCL_DEBUG="${NCCL_DEBUG}",NCCL_DEBUG_SUBSYS="${NCCL_DEBUG_SUBSYS}",NCCL_DEBUG_FILE="${NCCL_DEBUG_FILE}",TORCH_DISTRIBUTED_DEBUG="${TORCH_DISTRIBUTED_DEBUG}" \
@@ -95,35 +47,17 @@ srun \
     nvidia-smi topo -m
     ls -l /sys/class/infiniband || true
 
-    RDMA_LIBRARY_BIND_ARGS=()
-    for RDMA_LIBRARY in "$@"; do
-        RDMA_LIBRARY_NAME=$(basename "${RDMA_LIBRARY}")
-        RDMA_LIBRARY_REALPATH=$(realpath "${RDMA_LIBRARY}")
-        RDMA_LIBRARY_BIND_ARGS+=(
-            -B "${RDMA_LIBRARY_REALPATH}:/tmp/${RDMA_LIBRARY_NAME}"
-        )
-    done
-    RDMA_CONFIG_BIND_ARGS=()
-    if [[ -d "${RDMA_PROVIDER_CONFIG_DIR}" ]]; then
-        RDMA_CONFIG_BIND_ARGS=(-B "${RDMA_PROVIDER_CONFIG_DIR}:/etc/libibverbs.d")
-    fi
-
     exec singularity exec --nv \
         -B /n/holylabs \
         -B /net/holy-isilon \
         -B /tmp:/dev/shm \
         -B /dev/infiniband \
-        "${RDMA_LIBRARY_BIND_ARGS[@]}" \
-        "${RDMA_CONFIG_BIND_ARGS[@]}" \
         "${PROJECT_DIR}/cur.sif" \
         bash -lc "
         echo ---Container-RDMA-diagnostics---
         ls -l /dev/infiniband || true
         ibv_devices || true
         ldconfig -p | grep libibverbs || true
-        ls -l /tmp/libibverbs.so.1 || true
-        ldd /tmp/libibverbs.so.1 || true
-        export LD_LIBRARY_PATH=/tmp\${LD_LIBRARY_PATH:+:\${LD_LIBRARY_PATH}}
 
         exec accelerate launch \
             --config_file configs/accelerate/h200_8gpu_2node.yaml \
@@ -132,4 +66,4 @@ srun \
             --main_process_port \"${MASTER_PORT}\" \
             nccl_smoke.py
         "
-' bash "${RDMA_LIBRARIES[@]}"
+' bash
