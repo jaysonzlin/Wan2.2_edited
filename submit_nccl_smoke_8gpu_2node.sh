@@ -52,17 +52,26 @@ fi
 RDMA_PROVIDER_FOUND=false
 for RDMA_PROVIDER_CONFIG in "${RDMA_PROVIDER_CONFIG_DIR}"/*mlx5*.driver; do
     [[ -f "${RDMA_PROVIDER_CONFIG}" ]] || continue
-    RDMA_PROVIDER_NAME=$(tr -d '\n' < "${RDMA_PROVIDER_CONFIG}")
-    RDMA_PROVIDER_PATH=$(ldconfig -p | awk -v name="${RDMA_PROVIDER_NAME}" '$1 == name { print $NF; exit }')
+    RDMA_PROVIDER_DRIVER=$(awk '$1 == "driver" { print $2; exit }' "${RDMA_PROVIDER_CONFIG}")
+    if [[ "${RDMA_PROVIDER_DRIVER}" != mlx5 ]]; then
+        echo "Unsupported RDMA provider driver ${RDMA_PROVIDER_DRIVER}" >&2
+        exit 1
+    fi
+    RDMA_PROVIDER_PATH=$(
+        ldconfig -p \
+            | awk '$1 ~ /^libmlx5-rdmav[0-9]+\.so/ { print $NF; exit }'
+    )
     if [[ -z "${RDMA_PROVIDER_PATH}" ]]; then
-        for RDMA_LIBRARY_DIR in /lib64 /usr/lib64; do
-            RDMA_PROVIDER_PATH="${RDMA_LIBRARY_DIR}/${RDMA_PROVIDER_NAME}"
-            [[ -f "${RDMA_PROVIDER_PATH}" ]] && break
-            RDMA_PROVIDER_PATH=""
+        for RDMA_PROVIDER_CANDIDATE in \
+            /lib64/libmlx5-rdmav*.so \
+            /usr/lib64/libmlx5-rdmav*.so; do
+            [[ -f "${RDMA_PROVIDER_CANDIDATE}" ]] || continue
+            RDMA_PROVIDER_PATH="${RDMA_PROVIDER_CANDIDATE}"
+            break
         done
     fi
     if [[ -z "${RDMA_PROVIDER_PATH}" ]]; then
-        echo "Unable to locate RDMA provider ${RDMA_PROVIDER_NAME}" >&2
+        echo "Unable to locate the mlx5 RDMA provider library" >&2
         exit 1
     fi
     RDMA_LIBRARIES+=("${RDMA_PROVIDER_PATH}")

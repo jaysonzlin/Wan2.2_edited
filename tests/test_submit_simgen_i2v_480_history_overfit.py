@@ -104,7 +104,8 @@ def test_nccl_smoke_launcher_observes_two_node_transport_selection(
     assert r'libnl-route-3\.so' in script
     assert r'export LD_LIBRARY_PATH=/tmp\${LD_LIBRARY_PATH' in script
     assert 'RDMA_PROVIDER_CONFIG_DIR' in script
-    assert 'RDMA_PROVIDER_NAME' in script
+    assert 'RDMA_PROVIDER_DRIVER' in script
+    assert 'libmlx5-rdmav' in script
     assert 'ldd /tmp/libibverbs.so.1 || true' in script
     assert 'nccl_smoke.py' in script
     assert 'dist.init_process_group("nccl")' in smoke_source
@@ -123,7 +124,7 @@ def test_nccl_smoke_launcher_observes_two_node_transport_selection(
     rdma_library_dir.mkdir()
     provider_config_dir = tmp_path / "libibverbs.d"
     provider_config_dir.mkdir()
-    (provider_config_dir / "mlx5.driver").write_text("libmlx5-rdmav57.so\n")
+    (provider_config_dir / "mlx5.driver").write_text("driver mlx5\n")
     for library_name in (
         "libibverbs.so.1",
         "libmlx5.so.1",
