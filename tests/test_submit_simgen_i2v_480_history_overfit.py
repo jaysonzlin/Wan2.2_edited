@@ -92,7 +92,8 @@ def test_nccl_smoke_launcher_observes_two_node_transport_selection(
     assert "#SBATCH --ntasks=2" in script
     assert "#SBATCH --ntasks-per-node=1" in script
     assert "#SBATCH --gres=gpu:4" in script
-    assert '#SBATCH --constraint="h200&holyhdr"' in script
+    assert "#SBATCH --constraint=h200" in script
+    assert "holyhdr" not in script
     assert "#SBATCH --switches=1" in script
     assert "configs/accelerate/h200_8gpu_2node.yaml" in script
     assert (
@@ -193,7 +194,8 @@ def test_nccl_smoke_two_gpu_launcher_isolates_one_gpu_per_node() -> None:
     assert "#SBATCH --ntasks=2" in script
     assert "#SBATCH --ntasks-per-node=1" in script
     assert "#SBATCH --gres=gpu:1" in script
-    assert '#SBATCH --constraint="h200&holyhdr"' in script
+    assert "#SBATCH --constraint=h200" in script
+    assert "holyhdr" not in script
     assert "#SBATCH --switches=1" in script
     assert "configs/accelerate/h200_2gpu_2node.yaml" in script
     assert (
