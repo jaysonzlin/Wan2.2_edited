@@ -1,5 +1,6 @@
-"""Measure a fixed-size NCCL all-reduce across an Accelerate process group."""
+"""Measure a fixed-size NCCL all-reduce across a PyTorch process group."""
 
+import datetime
 import os
 import socket
 import time
@@ -12,6 +13,9 @@ TENSOR_MEBIBYTES = 256
 WARMUP_ITERATIONS = 5
 MEASURED_ITERATIONS = 20
 FLOAT32_BYTES = 4
+NCCL_SMOKE_INIT_TIMEOUT_SECONDS = int(
+    os.environ.get("NCCL_SMOKE_INIT_TIMEOUT_SECONDS", "120")
+)
 
 
 def main() -> None:
@@ -20,7 +24,10 @@ def main() -> None:
 
     local_rank = int(os.environ["LOCAL_RANK"])
     torch.cuda.set_device(local_rank)
-    dist.init_process_group("nccl")
+    dist.init_process_group(
+        "nccl",
+        timeout=datetime.timedelta(seconds=NCCL_SMOKE_INIT_TIMEOUT_SECONDS),
+    )
 
     try:
         tensor = torch.ones(

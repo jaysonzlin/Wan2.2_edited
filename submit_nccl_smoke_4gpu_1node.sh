@@ -34,6 +34,14 @@ export NCCL_DEBUG=INFO
 export NCCL_DEBUG_SUBSYS=INIT,NET,GRAPH
 export NCCL_DEBUG_FILE="${PROJECT_DIR}/logs/nccl-smoke-${SLURM_JOB_ID}/nccl.%h.%p.log"
 export TORCH_DISTRIBUTED_DEBUG=DETAIL
+export OMP_NUM_THREADS=1
+export NCCL_SOCKET_IFNAME=^lo,docker
+export GLOO_SOCKET_IFNAME=^lo,docker
+export NCCL_SOCKET_FAMILY=AF_INET
+export GLOO_SOCKET_FAMILY=AF_INET
+export TORCH_NCCL_BLOCKING_WAIT=1
+export TORCH_NCCL_ASYNC_ERROR_HANDLING=1
+export NCCL_SMOKE_INIT_TIMEOUT_SECONDS=120
 
 echo "Job ID: ${SLURM_JOB_ID}"
 echo "Nodes: ${SLURM_JOB_NODELIST}"
@@ -41,6 +49,7 @@ echo "Rendezvous: ${MASTER_ADDR}:${MASTER_PORT}"
 echo "NCCL logs: ${PROJECT_DIR}/logs/nccl-smoke-${SLURM_JOB_ID}"
 
 srun \
+    --cpu-bind=cores \
     --export=ALL,PROJECT_DIR="${PROJECT_DIR}",MASTER_ADDR="${MASTER_ADDR}",MASTER_PORT="${MASTER_PORT}",NCCL_DEBUG="${NCCL_DEBUG}",NCCL_DEBUG_SUBSYS="${NCCL_DEBUG_SUBSYS}",NCCL_DEBUG_FILE="${NCCL_DEBUG_FILE}",TORCH_DISTRIBUTED_DEBUG="${TORCH_DISTRIBUTED_DEBUG}" \
     --nodes=1 --ntasks=1 --ntasks-per-node=1 bash -lc '
     echo "Node rank: ${SLURM_NODEID}; host: $(hostname); CUDA_VISIBLE_DEVICES: ${CUDA_VISIBLE_DEVICES:-not set}"

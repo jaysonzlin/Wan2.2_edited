@@ -96,6 +96,17 @@ def test_nccl_smoke_launcher_observes_two_node_transport_selection(
     assert "#SBATCH --exclude=holygpu8a12204" in script
     assert "holyhdr" not in script
     assert "#SBATCH --switches=1" in script
+    assert 'export OMP_NUM_THREADS=1' in script
+    assert 'export NCCL_SOCKET_IFNAME=^lo,docker' in script
+    assert 'export GLOO_SOCKET_IFNAME=^lo,docker' in script
+    assert 'export NCCL_SOCKET_FAMILY=AF_INET' in script
+    assert 'export GLOO_SOCKET_FAMILY=AF_INET' in script
+    assert 'export TORCH_NCCL_BLOCKING_WAIT=1' in script
+    assert 'export TORCH_NCCL_ASYNC_ERROR_HANDLING=1' in script
+    assert 'export NCCL_SMOKE_INIT_TIMEOUT_SECONDS=120' in script
+    assert '--cpu-bind=cores' in script
+    assert 'NCCL_SMOKE_INIT_TIMEOUT_SECONDS = int(' in smoke_source
+    assert 'timeout=datetime.timedelta(seconds=NCCL_SMOKE_INIT_TIMEOUT_SECONDS)' in smoke_source
     assert "configs/accelerate/h200_8gpu_2node.yaml" in script
     assert (
         "nvidia-smi --query-gpu=name,uuid,pci.bus_id,compute_cap "
@@ -108,7 +119,6 @@ def test_nccl_smoke_launcher_observes_two_node_transport_selection(
     assert 'NCCL_DEBUG=INFO' in script
     assert 'NCCL_DEBUG_SUBSYS=INIT,NET,GRAPH' in script
     assert 'NCCL_DEBUG_FILE=' in script
-    assert 'NCCL_SOCKET_IFNAME' not in script
     assert 'NCCL_IB_HCA' not in script
     assert 'NCCL_IB_DISABLE' not in script
     assert '-B /dev/infiniband' in script
@@ -126,7 +136,8 @@ def test_nccl_smoke_launcher_observes_two_node_transport_selection(
     assert 'LD_LIBRARY_PATH=/tmp' not in script
     assert '/tmp/libibverbs.so.1' not in script
     assert 'nccl_smoke.py' in script
-    assert 'dist.init_process_group("nccl")' in smoke_source
+    assert 'dist.init_process_group(' in smoke_source
+    assert '"nccl",' in smoke_source
     assert 'dist.all_reduce(tensor)' in smoke_source
     assert 'RDMA_OPEN_FAILED' in rdma_probe_path.read_text()
 
@@ -201,6 +212,15 @@ def test_nccl_smoke_two_gpu_launcher_isolates_one_gpu_per_node() -> None:
     assert "#SBATCH --exclude=holygpu8a12204" in script
     assert "holyhdr" not in script
     assert "#SBATCH --switches=1" in script
+    assert 'export OMP_NUM_THREADS="${SLURM_CPUS_PER_TASK}"' in script
+    assert 'export NCCL_SOCKET_IFNAME=^lo,docker' in script
+    assert 'export GLOO_SOCKET_IFNAME=^lo,docker' in script
+    assert 'export NCCL_SOCKET_FAMILY=AF_INET' in script
+    assert 'export GLOO_SOCKET_FAMILY=AF_INET' in script
+    assert 'export TORCH_NCCL_BLOCKING_WAIT=1' in script
+    assert 'export TORCH_NCCL_ASYNC_ERROR_HANDLING=1' in script
+    assert 'export NCCL_SMOKE_INIT_TIMEOUT_SECONDS=120' in script
+    assert '--cpu-bind=cores' in script
     assert "configs/accelerate/h200_2gpu_2node.yaml" in script
     assert (
         "nvidia-smi --query-gpu=name,uuid,pci.bus_id,compute_cap "
@@ -229,6 +249,15 @@ def test_nccl_smoke_two_gpu_torchrun_launcher_starts_direct_distributed_run(
     assert syntax_result.returncode == 0, syntax_result.stderr
     assert "#SBATCH --constraint=h200&holyndr" in launcher_source
     assert "#SBATCH --exclude=holygpu8a12204" in launcher_source
+    assert 'export OMP_NUM_THREADS="${SLURM_CPUS_PER_TASK}"' in launcher_source
+    assert 'export NCCL_SOCKET_IFNAME=^lo,docker' in launcher_source
+    assert 'export GLOO_SOCKET_IFNAME=^lo,docker' in launcher_source
+    assert 'export NCCL_SOCKET_FAMILY=AF_INET' in launcher_source
+    assert 'export GLOO_SOCKET_FAMILY=AF_INET' in launcher_source
+    assert 'export TORCH_NCCL_BLOCKING_WAIT=1' in launcher_source
+    assert 'export TORCH_NCCL_ASYNC_ERROR_HANDLING=1' in launcher_source
+    assert 'export NCCL_SMOKE_INIT_TIMEOUT_SECONDS=120' in launcher_source
+    assert '--cpu-bind=cores' in launcher_source
 
     test_script_path = tmp_path / script_path.name
     test_script_path.write_text(
@@ -263,7 +292,13 @@ def test_nccl_smoke_two_gpu_torchrun_launcher_starts_direct_distributed_run(
             "    shift\n"
             "done\n"
         ),
-        "torchrun": "#!/bin/bash\nprintf 'TORCHRUN %s\\n' \"$*\"\n",
+        "torchrun": (
+            "#!/bin/bash\n"
+            "printf 'TORCHRUN %s\\n' \"$*\"\n"
+            "printf 'NCCL_ENV %s %s %s %s\\n' "
+            "\"$NCCL_SOCKET_IFNAME\" \"$NCCL_SOCKET_FAMILY\" "
+            "\"$TORCH_NCCL_BLOCKING_WAIT\" \"$NCCL_SMOKE_INIT_TIMEOUT_SECONDS\"\n"
+        ),
         "accelerate": "#!/bin/bash\nexit 37\n",
     }.items():
         command_path = bin_dir / command
@@ -280,6 +315,7 @@ def test_nccl_smoke_two_gpu_torchrun_launcher_starts_direct_distributed_run(
             "SLURM_JOB_ID": "12345",
             "SLURM_JOB_NODELIST": "node-a,node-b",
             "SLURM_NODEID": "0",
+            "SLURM_CPUS_PER_TASK": "16",
         },
     )
 
@@ -288,6 +324,7 @@ def test_nccl_smoke_two_gpu_torchrun_launcher_starts_direct_distributed_run(
         "TORCHRUN --nnodes=2 --nproc_per_node=1 --node_rank=0 "
         "--master_addr=10.0.0.1 --master_port=32345 nccl_smoke.py" in result.stdout
     )
+    assert "NCCL_ENV ^lo,docker AF_INET 1 120" in result.stdout
 
 
 def test_nccl_smoke_four_gpu_launcher_isolates_single_node_transport() -> None:
@@ -303,6 +340,15 @@ def test_nccl_smoke_four_gpu_launcher_isolates_single_node_transport() -> None:
     assert "#SBATCH --gres=gpu:4" in script
     assert "#SBATCH --constraint=h200&holyndr" in script
     assert "#SBATCH --exclude=holygpu8a12204" in script
+    assert 'export OMP_NUM_THREADS=1' in script
+    assert 'export NCCL_SOCKET_IFNAME=^lo,docker' in script
+    assert 'export GLOO_SOCKET_IFNAME=^lo,docker' in script
+    assert 'export NCCL_SOCKET_FAMILY=AF_INET' in script
+    assert 'export GLOO_SOCKET_FAMILY=AF_INET' in script
+    assert 'export TORCH_NCCL_BLOCKING_WAIT=1' in script
+    assert 'export TORCH_NCCL_ASYNC_ERROR_HANDLING=1' in script
+    assert 'export NCCL_SMOKE_INIT_TIMEOUT_SECONDS=120' in script
+    assert '--cpu-bind=cores' in script
     assert "configs/accelerate/h200_4gpu.yaml" in script
     assert '-B /dev/infiniband' in script
     assert script.count("python3 rdma_open_probe.py || true") == 2
