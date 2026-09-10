@@ -2,6 +2,7 @@
 #SBATCH --job-name=nccl_smoke_8gpu_2node
 #SBATCH --partition=gpu_requeue
 #SBATCH --constraint=h200
+#SBATCH --exclude=holygpu8a12204
 #SBATCH --switches=1
 #SBATCH --nodes=2
 #SBATCH --ntasks=2

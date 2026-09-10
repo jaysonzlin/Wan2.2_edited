@@ -93,6 +93,7 @@ def test_nccl_smoke_launcher_observes_two_node_transport_selection(
     assert "#SBATCH --ntasks-per-node=1" in script
     assert "#SBATCH --gres=gpu:4" in script
     assert "#SBATCH --constraint=h200" in script
+    assert "#SBATCH --exclude=holygpu8a12204" in script
     assert "holyhdr" not in script
     assert "#SBATCH --switches=1" in script
     assert "configs/accelerate/h200_8gpu_2node.yaml" in script
@@ -197,6 +198,7 @@ def test_nccl_smoke_two_gpu_launcher_isolates_one_gpu_per_node() -> None:
     assert "#SBATCH --ntasks-per-node=1" in script
     assert "#SBATCH --gres=gpu:1" in script
     assert "#SBATCH --constraint=h200" in script
+    assert "#SBATCH --exclude=holygpu8a12204" in script
     assert "holyhdr" not in script
     assert "#SBATCH --switches=1" in script
     assert "configs/accelerate/h200_2gpu_2node.yaml" in script
@@ -219,11 +221,13 @@ def test_nccl_smoke_two_gpu_torchrun_launcher_starts_direct_distributed_run(
 ) -> None:
     """The direct launcher must start one torchrun worker per allocated node."""
     script_path = Path("submit_nccl_smoke_2gpu_2node_torchrun.sh")
+    launcher_source = script_path.read_text()
 
     syntax_result = subprocess.run(
         ["bash", "-n", script_path], capture_output=True, text=True
     )
     assert syntax_result.returncode == 0, syntax_result.stderr
+    assert "#SBATCH --exclude=holygpu8a12204" in launcher_source
 
     test_script_path = tmp_path / script_path.name
     test_script_path.write_text(
@@ -296,6 +300,7 @@ def test_nccl_smoke_four_gpu_launcher_isolates_single_node_transport() -> None:
     assert "#SBATCH --ntasks=1" in script
     assert "#SBATCH --ntasks-per-node=1" in script
     assert "#SBATCH --gres=gpu:4" in script
+    assert "#SBATCH --exclude=holygpu8a12204" in script
     assert "configs/accelerate/h200_4gpu.yaml" in script
     assert '-B /dev/infiniband' in script
     assert script.count("python3 rdma_open_probe.py || true") == 2
