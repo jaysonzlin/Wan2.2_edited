@@ -56,7 +56,7 @@ def test_four_gpu_benchmark_launcher_requests_one_h200_node_and_starts_fresh(
     assert result.returncode == 0, result.stderr
     assert "#SBATCH --partition=gpu_h200" in script
     assert "#SBATCH --nodes=1" in script
-    assert "#SBATCH --gres=gpu:4" in script
+    assert "#SBATCH --gres=gpu:nvidia_h200:4" in script
     assert "#SBATCH --exclude=holygpu8a12204" in script
     assert "#SBATCH --requeue" not in script
     assert "configs/accelerate/h200_4gpu.yaml" in captured_args.read_text()
@@ -91,16 +91,16 @@ def test_nccl_smoke_launcher_observes_two_node_transport_selection(
     assert "#SBATCH --nodes=2" in script
     assert "#SBATCH --ntasks=2" in script
     assert "#SBATCH --ntasks-per-node=1" in script
-    assert "#SBATCH --gres=gpu:4" in script
+    assert "#SBATCH --gres=gpu:nvidia_h200:4" in script
     assert "#SBATCH --constraint=h200&holyndr" in script
     assert "#SBATCH --exclude=holygpu8a12204" in script
     assert "holyhdr" not in script
     assert "#SBATCH --switches=1" in script
     assert 'export OMP_NUM_THREADS=1' in script
     assert 'export NCCL_SOCKET_IFNAME=^lo,docker' in script
-    assert 'export GLOO_SOCKET_IFNAME=^lo,docker' in script
+    assert "GLOO_SOCKET_IFNAME" not in script
     assert 'export NCCL_SOCKET_FAMILY=AF_INET' in script
-    assert 'export GLOO_SOCKET_FAMILY=AF_INET' in script
+    assert "GLOO_SOCKET_FAMILY" not in script
     assert 'export TORCH_NCCL_BLOCKING_WAIT=1' in script
     assert 'export TORCH_NCCL_ASYNC_ERROR_HANDLING=1' in script
     assert 'export NCCL_SMOKE_INIT_TIMEOUT_SECONDS=120' in script
@@ -207,16 +207,16 @@ def test_nccl_smoke_two_gpu_launcher_isolates_one_gpu_per_node() -> None:
     assert "#SBATCH --nodes=2" in script
     assert "#SBATCH --ntasks=2" in script
     assert "#SBATCH --ntasks-per-node=1" in script
-    assert "#SBATCH --gres=gpu:1" in script
+    assert "#SBATCH --gres=gpu:nvidia_h200:1" in script
     assert "#SBATCH --constraint=h200&holyndr" in script
     assert "#SBATCH --exclude=holygpu8a12204" in script
     assert "holyhdr" not in script
     assert "#SBATCH --switches=1" in script
     assert 'export OMP_NUM_THREADS="${SLURM_CPUS_PER_TASK}"' in script
     assert 'export NCCL_SOCKET_IFNAME=^lo,docker' in script
-    assert 'export GLOO_SOCKET_IFNAME=^lo,docker' in script
+    assert "GLOO_SOCKET_IFNAME" not in script
     assert 'export NCCL_SOCKET_FAMILY=AF_INET' in script
-    assert 'export GLOO_SOCKET_FAMILY=AF_INET' in script
+    assert "GLOO_SOCKET_FAMILY" not in script
     assert 'export TORCH_NCCL_BLOCKING_WAIT=1' in script
     assert 'export TORCH_NCCL_ASYNC_ERROR_HANDLING=1' in script
     assert 'export NCCL_SMOKE_INIT_TIMEOUT_SECONDS=120' in script
@@ -249,11 +249,12 @@ def test_nccl_smoke_two_gpu_torchrun_launcher_starts_direct_distributed_run(
     assert syntax_result.returncode == 0, syntax_result.stderr
     assert "#SBATCH --constraint=h200&holyndr" in launcher_source
     assert "#SBATCH --exclude=holygpu8a12204" in launcher_source
+    assert "#SBATCH --gres=gpu:nvidia_h200:1" in launcher_source
     assert 'export OMP_NUM_THREADS="${SLURM_CPUS_PER_TASK}"' in launcher_source
     assert 'export NCCL_SOCKET_IFNAME=^lo,docker' in launcher_source
-    assert 'export GLOO_SOCKET_IFNAME=^lo,docker' in launcher_source
+    assert "GLOO_SOCKET_IFNAME" not in launcher_source
     assert 'export NCCL_SOCKET_FAMILY=AF_INET' in launcher_source
-    assert 'export GLOO_SOCKET_FAMILY=AF_INET' in launcher_source
+    assert "GLOO_SOCKET_FAMILY" not in launcher_source
     assert 'export TORCH_NCCL_BLOCKING_WAIT=1' in launcher_source
     assert 'export TORCH_NCCL_ASYNC_ERROR_HANDLING=1' in launcher_source
     assert 'export NCCL_SMOKE_INIT_TIMEOUT_SECONDS=120' in launcher_source
@@ -337,14 +338,14 @@ def test_nccl_smoke_four_gpu_launcher_isolates_single_node_transport() -> None:
     assert "#SBATCH --nodes=1" in script
     assert "#SBATCH --ntasks=1" in script
     assert "#SBATCH --ntasks-per-node=1" in script
-    assert "#SBATCH --gres=gpu:4" in script
+    assert "#SBATCH --gres=gpu:nvidia_h200:4" in script
     assert "#SBATCH --constraint=h200&holyndr" in script
     assert "#SBATCH --exclude=holygpu8a12204" in script
     assert 'export OMP_NUM_THREADS=1' in script
     assert 'export NCCL_SOCKET_IFNAME=^lo,docker' in script
-    assert 'export GLOO_SOCKET_IFNAME=^lo,docker' in script
+    assert "GLOO_SOCKET_IFNAME" not in script
     assert 'export NCCL_SOCKET_FAMILY=AF_INET' in script
-    assert 'export GLOO_SOCKET_FAMILY=AF_INET' in script
+    assert "GLOO_SOCKET_FAMILY" not in script
     assert 'export TORCH_NCCL_BLOCKING_WAIT=1' in script
     assert 'export TORCH_NCCL_ASYNC_ERROR_HANDLING=1' in script
     assert 'export NCCL_SMOKE_INIT_TIMEOUT_SECONDS=120' in script
