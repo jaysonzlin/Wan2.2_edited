@@ -102,6 +102,8 @@ def test_nccl_smoke_launcher_observes_two_node_transport_selection(
     )
     assert "SLURM_TOPOLOGY_ADDR" in script
     assert "SLURM_TOPOLOGY_ADDR_PATTERN" in script
+    assert "---Host-InfiniBand-port-state---" in script
+    assert "ibstat || true" in script
     assert 'NCCL_DEBUG=INFO' in script
     assert 'NCCL_DEBUG_SUBSYS=INIT,NET,GRAPH' in script
     assert 'NCCL_DEBUG_FILE=' in script
@@ -204,6 +206,8 @@ def test_nccl_smoke_two_gpu_launcher_isolates_one_gpu_per_node() -> None:
     )
     assert "SLURM_TOPOLOGY_ADDR" in script
     assert "SLURM_TOPOLOGY_ADDR_PATTERN" in script
+    assert "---Host-InfiniBand-port-state---" in script
+    assert "ibstat || true" in script
     assert '-B /dev/infiniband' in script
     assert script.count("python3 rdma_open_probe.py || true") == 2
     assert "num_machines: 2" in config

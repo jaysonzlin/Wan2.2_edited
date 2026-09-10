@@ -50,6 +50,8 @@ srun \
     nvidia-smi --query-gpu=name,uuid,pci.bus_id,compute_cap --format=csv,noheader || true
     nvidia-smi topo -m
     ls -l /sys/class/infiniband || true
+    echo ---Host-InfiniBand-port-state---
+    ibstat || true
     echo ---Host-RDMA-security---
     id
     id -Z || true
