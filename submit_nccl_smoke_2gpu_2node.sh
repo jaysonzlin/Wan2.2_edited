@@ -1,7 +1,8 @@
 #!/bin/bash
 #SBATCH --job-name=nccl_smoke_2gpu_2node
 #SBATCH --partition=gpu_requeue
-#SBATCH --constraint=h200
+#SBATCH --constraint="h200&holyhdr"
+#SBATCH --switches=1
 #SBATCH --nodes=2
 #SBATCH --ntasks=2
 #SBATCH --ntasks-per-node=1
@@ -44,6 +45,9 @@ srun \
     --export=ALL,PROJECT_DIR="${PROJECT_DIR}",MASTER_ADDR="${MASTER_ADDR}",MASTER_PORT="${MASTER_PORT}",NCCL_DEBUG="${NCCL_DEBUG}",NCCL_DEBUG_SUBSYS="${NCCL_DEBUG_SUBSYS}",NCCL_DEBUG_FILE="${NCCL_DEBUG_FILE}",TORCH_DISTRIBUTED_DEBUG="${TORCH_DISTRIBUTED_DEBUG}" \
     --nodes=2 --ntasks=2 --ntasks-per-node=1 bash -lc '
     echo "Node rank: ${SLURM_NODEID}; host: $(hostname); CUDA_VISIBLE_DEVICES: ${CUDA_VISIBLE_DEVICES:-not set}"
+    echo "Slurm topology: ${SLURM_TOPOLOGY_ADDR:-not set} (${SLURM_TOPOLOGY_ADDR_PATTERN:-not set})"
+    echo ---Allocated-GPU-identity---
+    nvidia-smi --query-gpu=name,uuid,pci.bus_id,compute_cap --format=csv,noheader || true
     nvidia-smi topo -m
     ls -l /sys/class/infiniband || true
     echo ---Host-RDMA-security---

@@ -92,7 +92,15 @@ def test_nccl_smoke_launcher_observes_two_node_transport_selection(
     assert "#SBATCH --ntasks=2" in script
     assert "#SBATCH --ntasks-per-node=1" in script
     assert "#SBATCH --gres=gpu:4" in script
+    assert '#SBATCH --constraint="h200&holyhdr"' in script
+    assert "#SBATCH --switches=1" in script
     assert "configs/accelerate/h200_8gpu_2node.yaml" in script
+    assert (
+        "nvidia-smi --query-gpu=name,uuid,pci.bus_id,compute_cap "
+        "--format=csv,noheader" in script
+    )
+    assert "SLURM_TOPOLOGY_ADDR" in script
+    assert "SLURM_TOPOLOGY_ADDR_PATTERN" in script
     assert 'NCCL_DEBUG=INFO' in script
     assert 'NCCL_DEBUG_SUBSYS=INIT,NET,GRAPH' in script
     assert 'NCCL_DEBUG_FILE=' in script
@@ -185,7 +193,15 @@ def test_nccl_smoke_two_gpu_launcher_isolates_one_gpu_per_node() -> None:
     assert "#SBATCH --ntasks=2" in script
     assert "#SBATCH --ntasks-per-node=1" in script
     assert "#SBATCH --gres=gpu:1" in script
+    assert '#SBATCH --constraint="h200&holyhdr"' in script
+    assert "#SBATCH --switches=1" in script
     assert "configs/accelerate/h200_2gpu_2node.yaml" in script
+    assert (
+        "nvidia-smi --query-gpu=name,uuid,pci.bus_id,compute_cap "
+        "--format=csv,noheader" in script
+    )
+    assert "SLURM_TOPOLOGY_ADDR" in script
+    assert "SLURM_TOPOLOGY_ADDR_PATTERN" in script
     assert '-B /dev/infiniband' in script
     assert script.count("python3 rdma_open_probe.py || true") == 2
     assert "num_machines: 2" in config
