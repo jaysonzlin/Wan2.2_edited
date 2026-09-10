@@ -214,6 +214,77 @@ def test_nccl_smoke_two_gpu_launcher_isolates_one_gpu_per_node() -> None:
     assert "num_processes: 2" in config
 
 
+def test_nccl_smoke_two_gpu_torchrun_launcher_starts_direct_distributed_run(
+    tmp_path: Path,
+) -> None:
+    """The direct launcher must start one torchrun worker per allocated node."""
+    script_path = Path("submit_nccl_smoke_2gpu_2node_torchrun.sh")
+
+    syntax_result = subprocess.run(
+        ["bash", "-n", script_path], capture_output=True, text=True
+    )
+    assert syntax_result.returncode == 0, syntax_result.stderr
+
+    test_script_path = tmp_path / script_path.name
+    test_script_path.write_text(
+        script_path.read_text().replace(
+            'PROJECT_DIR="/n/lab_storage/ydu_lab/jaysonzlin/Wan2.2_edited"',
+            f'PROJECT_DIR="{tmp_path}"',
+        )
+    )
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    for command, contents in {
+        "scontrol": "#!/bin/bash\nprintf 'node-a\\nnode-b\\n'\n",
+        "getent": "#!/bin/bash\nprintf '10.0.0.1 STREAM node-a\\n'\n",
+        "nvidia-smi": "#!/bin/bash\nexit 0\n",
+        "srun": (
+            "#!/bin/bash\n"
+            "while (($#)); do\n"
+            "    if [[ $1 == bash ]]; then\n"
+            "        shift\n"
+            "        exec bash \"$@\"\n"
+            "    fi\n"
+            "    shift\n"
+            "done\n"
+        ),
+        "singularity": (
+            "#!/bin/bash\n"
+            "while (($#)); do\n"
+            "    if [[ $1 == bash ]]; then\n"
+            "        shift\n"
+            "        exec bash \"$@\"\n"
+            "    fi\n"
+            "    shift\n"
+            "done\n"
+        ),
+        "torchrun": "#!/bin/bash\nprintf 'TORCHRUN %s\\n' \"$*\"\n",
+        "accelerate": "#!/bin/bash\nexit 37\n",
+    }.items():
+        command_path = bin_dir / command
+        command_path.write_text(contents)
+        command_path.chmod(0o755)
+
+    result = subprocess.run(
+        ["bash", test_script_path],
+        capture_output=True,
+        text=True,
+        env=os.environ
+        | {
+            "PATH": f"{bin_dir}:{os.environ['PATH']}",
+            "SLURM_JOB_ID": "12345",
+            "SLURM_JOB_NODELIST": "node-a,node-b",
+            "SLURM_NODEID": "0",
+        },
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert (
+        "TORCHRUN --nnodes=2 --nproc_per_node=1 --node_rank=0 "
+        "--master_addr=10.0.0.1 --master_port=32345 nccl_smoke.py" in result.stdout
+    )
+
+
 def test_nccl_smoke_four_gpu_launcher_isolates_single_node_transport() -> None:
     script_path = Path("submit_nccl_smoke_4gpu_1node.sh")
 
