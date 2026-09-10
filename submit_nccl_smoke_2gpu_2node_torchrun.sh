@@ -1,7 +1,7 @@
 #!/bin/bash
 #SBATCH --job-name=nccl_smoke_2gpu_2node_torchrun
 #SBATCH --partition=gpu_requeue
-#SBATCH --constraint=h200
+#SBATCH --constraint=h200&holyndr
 #SBATCH --exclude=holygpu8a12204
 #SBATCH --switches=1
 #SBATCH --nodes=2

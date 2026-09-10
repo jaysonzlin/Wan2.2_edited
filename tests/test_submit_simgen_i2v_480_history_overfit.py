@@ -92,7 +92,7 @@ def test_nccl_smoke_launcher_observes_two_node_transport_selection(
     assert "#SBATCH --ntasks=2" in script
     assert "#SBATCH --ntasks-per-node=1" in script
     assert "#SBATCH --gres=gpu:4" in script
-    assert "#SBATCH --constraint=h200" in script
+    assert "#SBATCH --constraint=h200&holyndr" in script
     assert "#SBATCH --exclude=holygpu8a12204" in script
     assert "holyhdr" not in script
     assert "#SBATCH --switches=1" in script
@@ -197,7 +197,7 @@ def test_nccl_smoke_two_gpu_launcher_isolates_one_gpu_per_node() -> None:
     assert "#SBATCH --ntasks=2" in script
     assert "#SBATCH --ntasks-per-node=1" in script
     assert "#SBATCH --gres=gpu:1" in script
-    assert "#SBATCH --constraint=h200" in script
+    assert "#SBATCH --constraint=h200&holyndr" in script
     assert "#SBATCH --exclude=holygpu8a12204" in script
     assert "holyhdr" not in script
     assert "#SBATCH --switches=1" in script
@@ -227,6 +227,7 @@ def test_nccl_smoke_two_gpu_torchrun_launcher_starts_direct_distributed_run(
         ["bash", "-n", script_path], capture_output=True, text=True
     )
     assert syntax_result.returncode == 0, syntax_result.stderr
+    assert "#SBATCH --constraint=h200&holyndr" in launcher_source
     assert "#SBATCH --exclude=holygpu8a12204" in launcher_source
 
     test_script_path = tmp_path / script_path.name
@@ -300,6 +301,7 @@ def test_nccl_smoke_four_gpu_launcher_isolates_single_node_transport() -> None:
     assert "#SBATCH --ntasks=1" in script
     assert "#SBATCH --ntasks-per-node=1" in script
     assert "#SBATCH --gres=gpu:4" in script
+    assert "#SBATCH --constraint=h200&holyndr" in script
     assert "#SBATCH --exclude=holygpu8a12204" in script
     assert "configs/accelerate/h200_4gpu.yaml" in script
     assert '-B /dev/infiniband' in script
