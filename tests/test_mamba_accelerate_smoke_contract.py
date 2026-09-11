@@ -48,6 +48,26 @@ class MambaAccelerateSmokeContractTest(unittest.TestCase):
         self.assertNotIn("singularity", source.lower())
         self.assertEqual(subprocess.run(["bash", "-n", script], check=False).returncode, 0)
 
+    def test_launcher_uses_shared_checkout_and_log_directory(self):
+        script = PROJECT_DIR / "submit_accelerate_smoke_2gpu_2node_mamba.sh"
+        source = script.read_text()
+
+        self.assertIn(
+            "#SBATCH --output=/n/lab_storage/ydu_lab/jaysonzlin/Wan2.2_edited/logs/"
+            "accelerate_smoke_2gpu_2node_mamba_%j.out",
+            source,
+        )
+        self.assertIn(
+            "#SBATCH --error=/n/lab_storage/ydu_lab/jaysonzlin/Wan2.2_edited/logs/"
+            "accelerate_smoke_2gpu_2node_mamba_%j.err",
+            source,
+        )
+        self.assertIn(
+            'PROJECT_DIR="${PROJECT_DIR:-/n/lab_storage/ydu_lab/jaysonzlin/Wan2.2_edited}"',
+            source,
+        )
+        self.assertNotIn('SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"', source)
+
     def test_benchmark_initializes_accelerator_and_requires_two_processes(self):
         tree = ast.parse((PROJECT_DIR / "nccl_smoke.py").read_text())
         imported_names = {

@@ -12,13 +12,12 @@
 #SBATCH --mem=128G
 #SBATCH --time=00:10:00
 #SBATCH --open-mode=append
-#SBATCH --output=accelerate_smoke_2gpu_2node_mamba_%j.out
-#SBATCH --error=accelerate_smoke_2gpu_2node_mamba_%j.err
+#SBATCH --output=/n/lab_storage/ydu_lab/jaysonzlin/Wan2.2_edited/logs/accelerate_smoke_2gpu_2node_mamba_%j.out
+#SBATCH --error=/n/lab_storage/ydu_lab/jaysonzlin/Wan2.2_edited/logs/accelerate_smoke_2gpu_2node_mamba_%j.err
 
 set -euo pipefail
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-PROJECT_DIR="${PROJECT_DIR:-${SCRIPT_DIR}}"
+PROJECT_DIR="${PROJECT_DIR:-/n/lab_storage/ydu_lab/jaysonzlin/Wan2.2_edited}"
 DEFAULT_MAMBA_ENV_PREFIX="/n/holylabs/ydu_lab/Lab/jaysonzlin/wan2-2-mamba"
 MAMBA_ENV_PREFIX="${MAMBA_ENV_PREFIX:-${DEFAULT_MAMBA_ENV_PREFIX}}"
 ACCELERATE_BIN="${MAMBA_ENV_PREFIX}/bin/accelerate"
