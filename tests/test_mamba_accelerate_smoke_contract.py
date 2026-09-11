@@ -22,6 +22,14 @@ class MambaAccelerateSmokeContractTest(unittest.TestCase):
         self.assertIn("--recreate", source)
         self.assertIn("torch==2.4.1", source)
         self.assertIn("accelerate>=1.1.1", source)
+        self.assertIn("export PYTHONNOUSERSITE=1", source)
+        self.assertIn("--no-user", source)
+        self.assertIn('"numpy>=1.23.5,<2"', source)
+        self.assertIn('"opencv-python>=4.9.0.80,<5"', source)
+        self.assertIn('"${PYTHON}" -m pip check', source)
+        self.assertIn("PIP_NO_USER_ARGS=(--no-user)", source)
+        self.assertIn('"${PIP_NO_USER_ARGS[@]}" --no-cache-dir', source)
+        self.assertNotIn('"${PIP_INSTALL_ARGS[@]}" --no-cache-dir', source)
         self.assertEqual(subprocess.run(["bash", "-n", script], check=False).returncode, 0)
 
     def test_slurm_launcher_runs_two_nodes_through_accelerate_without_singularity(self):
@@ -32,6 +40,7 @@ class MambaAccelerateSmokeContractTest(unittest.TestCase):
         self.assertIn("#SBATCH --gres=gpu:nvidia_h200:1", source)
         self.assertIn("h200_2gpu_2node.yaml", source)
         self.assertIn("accelerate", source)
+        self.assertIn("export PYTHONNOUSERSITE=1", source)
         self.assertNotIn("singularity", source.lower())
         self.assertEqual(subprocess.run(["bash", "-n", script], check=False).returncode, 0)
 
