@@ -12,6 +12,19 @@ node, then submit the test:
 sbatch submit_accelerate_smoke_2gpu_2node_mamba.sh
 ```
 
+To recreate the Mamba prefix with the exact Conda and pip package versions in
+the current container image, capture the image lock on a cluster node first,
+then make a clean prefix from it:
+
+```sh
+./capture_cur_sif_lock.sh
+./create_mamba_env.sh --from-sif-lock --recreate
+```
+
+The capture records `locks/cur-sif/conda-explicit.txt`,
+`locks/cur-sif/pip-freeze.txt`, and image provenance. Locked mode refuses to
+apply those records to an existing prefix, preventing a mixed environment.
+
 To discard the Mamba prefix and refresh the user-owned Conda Forge metadata
 before rebuilding, run:
 
