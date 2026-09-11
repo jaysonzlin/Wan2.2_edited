@@ -1,5 +1,32 @@
 # Wan2.2
 
+## Two-node Accelerate smoke test with Mamba
+
+Use this to measure a two-GPU NCCL all-reduce across two H200 nodes without a
+container. The environment prefix defaults to
+`/n/holylabs/ydu_lab/Lab/jaysonzlin/wan2-2-mamba`; create it once from a login
+node, then submit the test:
+
+```sh
+./create_mamba_env.sh
+sbatch submit_accelerate_smoke_2gpu_2node_mamba.sh
+```
+
+Both scripts accept `MAMBA_ENV_PREFIX` and the Slurm launcher additionally
+accepts `PROJECT_DIR`, so an alternate shared prefix or checkout can be used:
+
+```sh
+MAMBA_ENV_PREFIX=/shared/path/wan2-2-mamba ./create_mamba_env.sh
+PROJECT_DIR=/shared/path/Wan2.2 \
+  MAMBA_ENV_PREFIX=/shared/path/wan2-2-mamba \
+  sbatch /shared/path/Wan2.2/submit_accelerate_smoke_2gpu_2node_mamba.sh
+```
+
+The test requires exactly one allocated GPU on each of two nodes, initializes
+Accelerate in both processes, checks the all-reduce result, and prints the
+per-rank logical bandwidth. Use `./create_mamba_env.sh --recreate` only when a
+clean rebuild of the prefix is intended.
+
 ## Joint SimGen training
 
 Prepare the immutable dense-Utonia cache once on a CUDA node, then train with

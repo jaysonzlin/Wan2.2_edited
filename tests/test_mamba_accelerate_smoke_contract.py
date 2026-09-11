@@ -1,0 +1,59 @@
+"""Static contract checks for the Mamba-based two-node smoke test.
+
+These run without CUDA, PyTorch, or a Slurm allocation.  The actual benchmark
+is intentionally exercised on the cluster by the Slurm launcher.
+"""
+
+import ast
+import pathlib
+import subprocess
+import unittest
+
+
+PROJECT_DIR = pathlib.Path(__file__).resolve().parents[1]
+
+
+class MambaAccelerateSmokeContractTest(unittest.TestCase):
+    def test_environment_builder_exposes_shared_prefix_and_recreate_guard(self):
+        script = PROJECT_DIR / "create_mamba_env.sh"
+        self.assertTrue(script.is_file())
+        source = script.read_text()
+        self.assertIn("/n/holylabs/ydu_lab/Lab/jaysonzlin/wan2-2-mamba", source)
+        self.assertIn("--recreate", source)
+        self.assertIn("torch==2.4.1", source)
+        self.assertIn("accelerate>=1.1.1", source)
+        self.assertEqual(subprocess.run(["bash", "-n", script], check=False).returncode, 0)
+
+    def test_slurm_launcher_runs_two_nodes_through_accelerate_without_singularity(self):
+        script = PROJECT_DIR / "submit_accelerate_smoke_2gpu_2node_mamba.sh"
+        self.assertTrue(script.is_file())
+        source = script.read_text()
+        self.assertIn("#SBATCH --nodes=2", source)
+        self.assertIn("#SBATCH --gres=gpu:nvidia_h200:1", source)
+        self.assertIn("h200_2gpu_2node.yaml", source)
+        self.assertIn("accelerate", source)
+        self.assertNotIn("singularity", source.lower())
+        self.assertEqual(subprocess.run(["bash", "-n", script], check=False).returncode, 0)
+
+    def test_benchmark_initializes_accelerator_and_requires_two_processes(self):
+        tree = ast.parse((PROJECT_DIR / "nccl_smoke.py").read_text())
+        imported_names = {
+            alias.name
+            for node in ast.walk(tree)
+            if isinstance(node, ast.ImportFrom) and node.module == "accelerate"
+            for alias in node.names
+        }
+        self.assertIn("Accelerator", imported_names)
+
+        attributes = {
+            node.attr for node in ast.walk(tree) if isinstance(node, ast.Attribute)
+        }
+        self.assertIn("num_processes", attributes)
+
+        source = (PROJECT_DIR / "nccl_smoke.py").read_text()
+        self.assertIn("InitProcessGroupKwargs", source)
+        self.assertIn("NCCL_SMOKE_INIT_TIMEOUT_SECONDS", source)
+
+
+if __name__ == "__main__":
+    unittest.main()
