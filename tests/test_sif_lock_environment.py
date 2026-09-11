@@ -26,7 +26,8 @@ def test_capture_script_exports_sorted_sif_conda_and_pip_locks(tmp_path: Path) -
         "[[ $1 == exec && $2 == --nv && $3 == \"$SIF_IMAGE\" ]]\n"
         "case \"$4 $5 ${6:-} ${7:-}\" in\n"
         "  */conda\\ list\\ -p\\ /opt/conda/envs/app) printf '%s\\n' '# explicit' 'https://conda.example/python-3.10.1.conda' ;;\n"
-        "  */python\\ -m\\ pip\\ freeze) printf '%s\\n' 'zeta==1' 'alpha==2' ;;\n"
+        "  */python\\ -m\\ pip\\ list) printf '%s\\n' 'alpha==2' 'packaging==25.0' 'zeta==1' ;;\n"
+        "  */python\\ -m\\ pip\\ freeze) printf '%s\\n' 'zeta==1' 'packaging @ file:///home/conda/build/packaging' 'alpha==2' ;;\n"
         "  */python\\ --version\\ *) printf '%s\\n' 'Python 3.10.1' ;;\n"
         "  *) echo \"unexpected singularity invocation: $*\" >&2; exit 1 ;;\n"
         "esac\n",
@@ -51,7 +52,7 @@ def test_capture_script_exports_sorted_sif_conda_and_pip_locks(tmp_path: Path) -
     assert (lock_dir / "pip-freeze.txt").read_text() == (
         "--extra-index-url https://download.pytorch.org/whl/cu124\n"
         "--find-links https://data.pyg.org/whl/torch-2.4.0+cu124.html\n"
-        "alpha==2\nzeta==1\n"
+        "alpha==2\npackaging==25.0\nzeta==1\n"
     )
     provenance = (lock_dir / "provenance.txt").read_text()
     assert "image_sha256=" in provenance
@@ -68,13 +69,17 @@ def test_lock_mode_recreates_prefix_from_captured_conda_and_pip_locks(
     conda_lock = lock_dir / "conda-explicit.txt"
     pip_lock = lock_dir / "pip-freeze.txt"
     conda_lock.write_text("# explicit\nhttps://conda.example/python-3.10.1.conda\n")
-    pip_lock.write_text("alpha==2\nzeta==1\n")
+    pip_lock.write_text("alpha==2\npackaging==25.0\nzeta==1\n")
     env_prefix = tmp_path / "environment"
     bin_dir = tmp_path / "bin"
     bin_dir.mkdir()
     call_log = tmp_path / "calls.txt"
     pip_freeze_output = tmp_path / "pip-freeze-output.txt"
-    pip_freeze_output.write_text("alpha==2\nzeta==1\n")
+    pip_freeze_output.write_text(
+        "alpha==2\npackaging @ file:///home/conda/build/packaging\nzeta==1\n"
+    )
+    pip_list_output = tmp_path / "pip-list-output.txt"
+    pip_list_output.write_text("alpha==2\npackaging==25.0\nzeta==1\n")
     _write_executable(
         bin_dir / "mamba",
         "#!/bin/bash\n"
@@ -90,6 +95,7 @@ def test_lock_mode_recreates_prefix_from_captured_conda_and_pip_locks(
         "#!/bin/bash\n"
         "printf 'python %s\\n' \"$*\" >> \"$CALL_LOG\"\n"
         "if [[ $* == *'pip freeze --all'* ]]; then cat \"$PIP_FREEZE_OUTPUT\"; fi\n"
+        "if [[ $* == *'pip list --format=freeze'* ]]; then cat \"$PIP_LIST_OUTPUT\"; fi\n"
         "PYTHON\n"
         "chmod +x \"$prefix/bin/python\"\n",
     )
@@ -107,6 +113,7 @@ def test_lock_mode_recreates_prefix_from_captured_conda_and_pip_locks(
             "SIF_LOCK_DIR": str(lock_dir),
             "CALL_LOG": str(call_log),
             "PIP_FREEZE_OUTPUT": str(pip_freeze_output),
+            "PIP_LIST_OUTPUT": str(pip_list_output),
         },
     )
 

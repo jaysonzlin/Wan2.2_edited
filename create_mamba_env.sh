@@ -104,9 +104,36 @@ if [[ "${FROM_SIF_LOCK}" == true ]]; then
     "${PYTHON}" -m pip install "${PIP_NO_USER_ARGS[@]}" --no-cache-dir \
         --requirement "${PIP_LOCK_FILE}"
     "${PYTHON}" -m pip check
+    PIP_LIST_FILE=$(mktemp)
+    PIP_FREEZE_FILE=$(mktemp)
+    trap 'rm -f "${PIP_LIST_FILE}" "${PIP_FREEZE_FILE}"' EXIT
+    "${PYTHON}" -m pip list --format=freeze > "${PIP_LIST_FILE}"
+    "${PYTHON}" -m pip freeze --all > "${PIP_FREEZE_FILE}"
     if ! grep -Ev '^--(extra-index-url|find-links) ' "${PIP_LOCK_FILE}" \
         | diff -u - \
-        <("${PYTHON}" -m pip freeze --all | LC_ALL=C sort); then
+        <(awk -F '==' '
+            function canonical_name(name) {
+                name = tolower(name)
+                gsub(/[-_.]+/, "-", name)
+                return name
+            }
+            NR == FNR {
+                versions[canonical_name($1)] = $2
+                next
+            }
+            / @ file:\/\// {
+                name = $1
+                sub(/ @ .*/, "", name)
+                version = versions[canonical_name(name)]
+                if (version == "") {
+                    print "Could not find a portable version for " name > "/dev/stderr"
+                    exit 1
+                }
+                print name "==" version
+                next
+            }
+            { print }
+        ' "${PIP_LIST_FILE}" "${PIP_FREEZE_FILE}" | LC_ALL=C sort); then
         echo "The rebuilt Mamba prefix does not match ${PIP_LOCK_FILE}." >&2
         exit 1
     fi
