@@ -6,7 +6,9 @@ set -euo pipefail
 DEFAULT_MAMBA_ENV_PREFIX="/n/holylabs/ydu_lab/Lab/jaysonzlin/wan2-2-mamba"
 MAMBA_ENV_PREFIX="${MAMBA_ENV_PREFIX:-${DEFAULT_MAMBA_ENV_PREFIX}}"
 MAMBA_EXE="${MAMBA_EXE:-mamba}"
+MAMBA_PKGS_DIRS="${MAMBA_PKGS_DIRS:-${MAMBA_ENV_PREFIX%/*}/.mamba-pkgs}"
 RECREATE=false
+REFRESH_METADATA=false
 
 # Do not let this environment resolve imports or pip requirements from ~/.local.
 # current.def applies the same isolation at container runtime.
@@ -16,15 +18,17 @@ PIP_INSTALL_ARGS=("${PIP_NO_USER_ARGS[@]}" --upgrade --upgrade-strategy eager)
 
 usage() {
     cat <<EOF
-Usage: $(basename "$0") [--recreate]
+Usage: $(basename "$0") [--recreate] [--refresh-metadata]
 
 Creates or updates the environment at \$MAMBA_ENV_PREFIX.
 
 Environment variables:
   MAMBA_ENV_PREFIX  Environment prefix (default: ${DEFAULT_MAMBA_ENV_PREFIX})
   MAMBA_EXE         Mamba executable (default: mamba)
+  MAMBA_PKGS_DIRS   Writable package cache (default: ${MAMBA_PKGS_DIRS})
 
 --recreate removes the existing prefix before creating it again.
+--refresh-metadata removes this package cache's Conda channel index before installing.
 EOF
 }
 
@@ -32,6 +36,9 @@ while [[ $# -gt 0 ]]; do
     case "$1" in
         --recreate)
             RECREATE=true
+            ;;
+        --refresh-metadata)
+            REFRESH_METADATA=true
             ;;
         --help|-h)
             usage
@@ -49,6 +56,13 @@ done
 if ! command -v "${MAMBA_EXE}" >/dev/null 2>&1; then
     echo "Mamba executable '${MAMBA_EXE}' was not found. Load it and retry, or set MAMBA_EXE." >&2
     exit 1
+fi
+
+mkdir -p "${MAMBA_PKGS_DIRS}"
+export CONDA_PKGS_DIRS="${MAMBA_PKGS_DIRS}"
+
+if [[ "${REFRESH_METADATA}" == true ]]; then
+    "${MAMBA_EXE}" clean --yes --index-cache
 fi
 
 if [[ -e "${MAMBA_ENV_PREFIX}" && "${RECREATE}" == true ]]; then

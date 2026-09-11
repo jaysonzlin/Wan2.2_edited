@@ -12,6 +12,13 @@ node, then submit the test:
 sbatch submit_accelerate_smoke_2gpu_2node_mamba.sh
 ```
 
+To discard the Mamba prefix and refresh the user-owned Conda Forge metadata
+before rebuilding, run:
+
+```sh
+./create_mamba_env.sh --recreate --refresh-metadata
+```
+
 Both scripts accept `MAMBA_ENV_PREFIX` and the Slurm launcher additionally
 accepts `PROJECT_DIR`, so an alternate shared prefix or checkout can be used:
 
