@@ -1,4 +1,6 @@
 #!/bin/bash
+#SBATCH --mail-user=jlin3@college.harvard.edu
+#SBATCH --mail-type=BEGIN,END,FAIL
 #SBATCH --job-name=pretrain_simgen_pc_4gpu
 #SBATCH --partition=gpu_requeue
 #SBATCH --nodes=1

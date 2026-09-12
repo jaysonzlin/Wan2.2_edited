@@ -1,4 +1,6 @@
 #!/bin/bash
+#SBATCH --mail-user=jlin3@college.harvard.edu
+#SBATCH --mail-type=BEGIN,END,FAIL
 #SBATCH --job-name=wan_i2v_832x480
 #SBATCH --partition=gpu_h200
 #SBATCH --gres=gpu:1

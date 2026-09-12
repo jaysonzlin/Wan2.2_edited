@@ -1,4 +1,6 @@
 #!/bin/bash
+#SBATCH --mail-user=jlin3@college.harvard.edu
+#SBATCH --mail-type=BEGIN,END,FAIL
 #SBATCH --job-name=wan_overfit
 #SBATCH --partition=gpu_requeue
 #SBATCH --constraint=h200

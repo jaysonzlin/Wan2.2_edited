@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+#SBATCH --mail-user=jlin3@college.harvard.edu
+#SBATCH --mail-type=BEGIN,END,FAIL
 #SBATCH --job-name=accelerate_smoke_2gpu_2node_mamba
 #SBATCH --partition=gpu_requeue
 #SBATCH --constraint=h200&holyndr

@@ -1,4 +1,6 @@
 #!/bin/bash
+#SBATCH --mail-user=jlin3@college.harvard.edu
+#SBATCH --mail-type=BEGIN,END,FAIL
 #SBATCH --job-name=nccl_smoke_8gpu_2node
 #SBATCH --partition=gpu_requeue
 #SBATCH --constraint=h200&holyndr

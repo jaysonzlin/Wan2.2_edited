@@ -1,4 +1,6 @@
 #!/bin/bash
+#SBATCH --mail-user=jlin3@college.harvard.edu
+#SBATCH --mail-type=BEGIN,END,FAIL
 #SBATCH --job-name=simgen_i2v_480_history_first128
 #SBATCH --partition=gpu_requeue
 #SBATCH --constraint=h200
