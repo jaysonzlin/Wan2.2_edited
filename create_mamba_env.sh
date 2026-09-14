@@ -170,7 +170,7 @@ else
 
     "${PYTHON}" -m pip install "${PIP_NO_USER_ARGS[@]}" --no-cache-dir spconv-cu124 torch-scatter \
         -f https://data.pyg.org/whl/torch-2.4.0+cu124.html
-    "${PYTHON}" -m pip install "${PIP_NO_USER_ARGS[@]}" --no-cache-dir flash-attn
+    "${PYTHON}" -m pip install "${PIP_NO_USER_ARGS[@]}" --no-cache-dir --no-build-isolation flash-attn
 
     "${PYTHON}" -m pip check
 
