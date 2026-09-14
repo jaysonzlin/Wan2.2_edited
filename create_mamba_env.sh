@@ -170,8 +170,7 @@ else
 
     "${PYTHON}" -m pip install "${PIP_NO_USER_ARGS[@]}" --no-cache-dir spconv-cu124 torch-scatter \
         -f https://data.pyg.org/whl/torch-2.4.0+cu124.html
-    "${PYTHON}" -m pip install "${PIP_NO_USER_ARGS[@]}" \
-        https://github.com/mjun0812/flash-attention-prebuild-wheels/releases/download/v0.0.8/flash_attn-2.6.3+cu126torch2.4-cp310-cp310-linux_x86_64.whl
+    "${PYTHON}" -m pip install "${PIP_NO_USER_ARGS[@]}" --no-cache-dir flash-attn
 
     "${PYTHON}" -m pip check
 
