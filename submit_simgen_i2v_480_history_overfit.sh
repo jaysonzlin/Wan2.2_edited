@@ -9,7 +9,7 @@
 #SBATCH --ntasks-per-node=1
 #SBATCH --gres=gpu:4
 #SBATCH --cpus-per-task=16
-#SBATCH --mem=128G
+#SBATCH --mem=48G
 #SBATCH --time=12:00:00
 #SBATCH --requeue
 #SBATCH --open-mode=append

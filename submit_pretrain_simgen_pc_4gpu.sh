@@ -38,5 +38,5 @@ exec singularity exec --nv \
     accelerate launch \
         --config_file configs/accelerate/h200_4gpu.yaml \
         pretrain_simgen_pc.py \
-        --config configs/train/pretrain_simgen_pc_480_4gpu.yaml \
+        --config configs/train/pretrain_simgen_pc_480.yaml \
         training.resume_from_checkpoint=latest

@@ -6,7 +6,7 @@ import yaml
 from training.simgen_pc_pretraining_config import load_simgen_pc_pretraining_config
 
 
-CONFIG_PATH = "configs/train/pretrain_simgen_pc_480_4gpu.yaml"
+CONFIG_PATH = "configs/train/pretrain_simgen_pc_480.yaml"
 
 
 def test_pretraining_config_loads_the_fixed_200k_experiment():

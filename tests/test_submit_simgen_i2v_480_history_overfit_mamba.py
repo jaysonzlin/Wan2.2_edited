@@ -92,6 +92,7 @@ def test_mamba_launcher_preflights_training_extensions_before_eight_gpu_launch(
     assert "#SBATCH --exclude=holygpu8a12204" in launcher
     assert "#SBATCH --switches=1" in launcher
     assert "#SBATCH --gres=gpu:nvidia_h200:4" in launcher
+    assert "#SBATCH --mem=48G" in launcher
     assert "singularity" not in launcher.lower()
 
 
@@ -218,7 +219,7 @@ def test_pc_mamba_launcher_preflights_then_launches_eight_gpu_pretraining(
     assert (
         "accelerate launch --config_file configs/accelerate/h200_8gpu_2node.yaml "
         "--machine_rank 0 --main_process_ip 10.0.0.1 --main_process_port 32345 "
-        "pretrain_simgen_pc.py --config configs/train/pretrain_simgen_pc_480_4gpu.yaml "
+        "pretrain_simgen_pc.py --config configs/train/pretrain_simgen_pc_480.yaml "
         "logging.output_dir=outputs/simgen_pc_pretraining_8gpu "
         "training.resume_from_checkpoint=latest"
     ) in calls

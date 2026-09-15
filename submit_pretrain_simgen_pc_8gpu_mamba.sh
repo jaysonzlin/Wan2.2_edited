@@ -96,7 +96,7 @@ srun --cpu-bind=cores --nodes=2 --ntasks=2 --ntasks-per-node=1 \
             --main_process_ip "${MASTER_ADDR}" \
             --main_process_port "${MASTER_PORT}" \
             pretrain_simgen_pc.py \
-            --config configs/train/pretrain_simgen_pc_480_4gpu.yaml \
+            --config configs/train/pretrain_simgen_pc_480.yaml \
             logging.output_dir=outputs/simgen_pc_pretraining_8gpu \
             training.resume_from_checkpoint=latest
     '
