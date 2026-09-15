@@ -31,6 +31,11 @@ def test_mamba_launcher_preflights_training_extensions_before_eight_gpu_launch(
     _write_executable(bin_dir / "nvidia-smi", "#!/bin/bash\nexit 0\n")
     _write_executable(bin_dir / "ibstat", "#!/bin/bash\nexit 0\n")
     _write_executable(
+        bin_dir / "module",
+        "#!/bin/bash\n"
+        "printf 'module %s\\n' \"$*\" >> \"$CALL_LOG\"\n",
+    )
+    _write_executable(
         bin_dir / "srun",
         "#!/bin/bash\n"
         "printf 'srun %s\\n' \"$*\" >> \"$CALL_LOG\"\n"
@@ -70,6 +75,14 @@ def test_mamba_launcher_preflights_training_extensions_before_eight_gpu_launch(
     assert result.returncode == 0, result.stderr
     assert "MAMBA_PREFLIGHT_OK cuda_devices=4" in result.stdout
     calls = call_log.read_text()
+    module_calls = [
+        "module load Mambaforge",
+        "module load cuda/12.4.1",
+        "module load gcc/9.5.0-fasrc01",
+    ]
+    assert all(call in calls for call in module_calls)
+    assert calls.index(module_calls[0]) < calls.index(module_calls[1]) < calls.index(module_calls[2])
+    assert calls.index(module_calls[2]) < calls.index("python -c")
     assert "python -c import torch; import flash_attn; import spconv.pytorch; import torch_scatter;" in calls
     assert "accelerate launch --config_file configs/accelerate/h200_8gpu_2node.yaml" in calls
     assert "--machine_rank 0 --main_process_ip 10.0.0.1 --main_process_port 32345" in calls
@@ -101,6 +114,11 @@ def test_mamba_launcher_stops_before_accelerate_when_preflight_fails(
     )
     _write_executable(bin_dir / "nvidia-smi", "#!/bin/bash\nexit 0\n")
     _write_executable(bin_dir / "ibstat", "#!/bin/bash\nexit 0\n")
+    _write_executable(
+        bin_dir / "module",
+        "#!/bin/bash\n"
+        "printf 'module %s\\n' \"$*\" >> \"$CALL_LOG\"\n",
+    )
     _write_executable(
         bin_dir / "srun",
         "#!/bin/bash\n"

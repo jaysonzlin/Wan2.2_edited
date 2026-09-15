@@ -20,6 +20,10 @@
 
 set -euo pipefail
 
+module load Mambaforge
+module load cuda/12.4.1
+module load gcc/9.5.0-fasrc01
+
 PROJECT_DIR="${PROJECT_DIR:-/n/lab_storage/ydu_lab/jaysonzlin/Wan2.2_edited}"
 DEFAULT_MAMBA_ENV_PREFIX="/n/holylabs/ydu_lab/Lab/jaysonzlin/wan2-2-mamba"
 MAMBA_ENV_PREFIX="${MAMBA_ENV_PREFIX:-${DEFAULT_MAMBA_ENV_PREFIX}}"
