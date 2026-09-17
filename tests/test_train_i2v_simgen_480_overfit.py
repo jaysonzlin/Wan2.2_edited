@@ -4,10 +4,12 @@ import sys
 from pathlib import Path
 
 import torch
+import pytest
 from PIL import Image
 
 from train_i2v_simgen_480_overfit import (
     build_dataset,
+    load_checkpoint_with_fallback,
     make_history_conditioned_visualization_latent,
 )
 
@@ -53,3 +55,66 @@ def test_build_dataset_uses_configured_sample_count(tmp_path: Path) -> None:
 
     assert len(dataset) == 2
     assert dataset[1]["sample_id"] == "sample_1"
+
+
+def test_latest_checkpoint_skips_missing_scheduler_before_loading(tmp_path: Path) -> None:
+    class FakeAccelerator:
+        def __init__(self) -> None:
+            self.attempts: list[Path] = []
+
+        def load_state(self, path: Path) -> None:
+            self.attempts.append(Path(path))
+
+    incomplete_checkpoint = tmp_path / "checkpoint-2000"
+    incomplete_checkpoint.mkdir()
+    intact_checkpoint = tmp_path / "checkpoint-1000"
+    intact_checkpoint.mkdir()
+    (intact_checkpoint / "model.safetensors").touch()
+    (intact_checkpoint / "optimizer.bin").touch()
+    (intact_checkpoint / "scheduler.bin").touch()
+    (intact_checkpoint / "random_states_0.pkl").touch()
+    accelerator = FakeAccelerator()
+
+    resumed_path = load_checkpoint_with_fallback(accelerator, tmp_path, "latest")
+
+    assert resumed_path == intact_checkpoint
+    assert accelerator.attempts == [intact_checkpoint]
+
+
+@pytest.mark.parametrize(
+    "missing_file", ["model.safetensors", "optimizer.bin", "random_states_0.pkl"]
+)
+def test_latest_checkpoint_skips_missing_required_file_before_loading(
+    tmp_path: Path, missing_file: str
+) -> None:
+    class FakeAccelerator:
+        process_index = 0
+
+        def __init__(self) -> None:
+            self.attempts: list[Path] = []
+
+        def load_state(self, path: Path) -> None:
+            self.attempts.append(Path(path))
+
+    incomplete_checkpoint = tmp_path / "checkpoint-2000"
+    incomplete_checkpoint.mkdir()
+    for required_file in (
+        "model.safetensors",
+        "optimizer.bin",
+        "scheduler.bin",
+        "random_states_0.pkl",
+    ):
+        if required_file != missing_file:
+            (incomplete_checkpoint / required_file).touch()
+    intact_checkpoint = tmp_path / "checkpoint-1000"
+    intact_checkpoint.mkdir()
+    (intact_checkpoint / "model.safetensors").touch()
+    (intact_checkpoint / "optimizer.bin").touch()
+    (intact_checkpoint / "scheduler.bin").touch()
+    (intact_checkpoint / "random_states_0.pkl").touch()
+    accelerator = FakeAccelerator()
+
+    resumed_path = load_checkpoint_with_fallback(accelerator, tmp_path, "latest")
+
+    assert resumed_path == intact_checkpoint
+    assert accelerator.attempts == [intact_checkpoint]

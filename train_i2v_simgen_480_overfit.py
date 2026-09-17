@@ -91,6 +91,22 @@ def _checkpoint_paths(output_dir: Path, setting: str | None) -> list[Path]:
     )
 
 
+def _missing_checkpoint_files(checkpoint: Path, process_index: int) -> list[str]:
+    """List the Accelerate state files required to resume this training job."""
+    missing_files = [
+        filename
+        for filename in (
+            "optimizer.bin",
+            "scheduler.bin",
+            f"random_states_{process_index}.pkl",
+        )
+        if not (checkpoint / filename).is_file()
+    ]
+    if not (checkpoint / "model.safetensors").is_file():
+        missing_files.append("model.safetensors")
+    return missing_files
+
+
 def load_checkpoint_with_fallback(accelerator, output_dir: Path, setting: str | None) -> Path | None:
     """Load requested state, skipping incomplete checkpoints for latest."""
     checkpoints = _checkpoint_paths(output_dir, setting)
@@ -99,6 +115,19 @@ def load_checkpoint_with_fallback(accelerator, output_dir: Path, setting: str | 
 
     errors = []
     for checkpoint in checkpoints:
+        if setting == "latest":
+            missing_files = _missing_checkpoint_files(
+                checkpoint, getattr(accelerator, "process_index", 0)
+            )
+        else:
+            missing_files = []
+        if missing_files:
+            error = FileNotFoundError(
+                f"missing required checkpoint files: {', '.join(missing_files)}"
+            )
+            errors.append((checkpoint, error))
+            print(f"Could not load {checkpoint}; trying prior checkpoint: {error}")
+            continue
         try:
             accelerator.load_state(checkpoint)
         except Exception as error:

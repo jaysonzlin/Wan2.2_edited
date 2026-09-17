@@ -136,8 +136,9 @@ def test_nccl_smoke_launcher_observes_two_node_transport_selection(
     assert 'LD_LIBRARY_PATH=/tmp' not in script
     assert '/tmp/libibverbs.so.1' not in script
     assert 'nccl_smoke.py' in script
-    assert 'dist.init_process_group(' in smoke_source
-    assert '"nccl",' in smoke_source
+    assert "InitProcessGroupKwargs(" in smoke_source
+    assert 'backend="nccl"' in smoke_source
+    assert "Accelerator(kwargs_handlers=[init_process_group_kwargs])" in smoke_source
     assert 'dist.all_reduce(tensor)' in smoke_source
     assert 'RDMA_OPEN_FAILED' in rdma_probe_path.read_text()
 
