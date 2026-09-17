@@ -23,6 +23,19 @@ from train_pc import (
 )
 
 
+_REQUIRED_PC_CHECKPOINT_FILES = (
+    "model.safetensors",
+    "optimizer.bin",
+    "scheduler.bin",
+    "random_states_0.pkl",
+)
+
+
+def _write_required_pc_checkpoint_files(checkpoint):
+    for filename in _REQUIRED_PC_CHECKPOINT_FILES:
+        (checkpoint / filename).touch()
+
+
 def test_train_pc_help_is_local_only():
     result = subprocess.run(
         [sys.executable, "train_pc.py", "--help"], capture_output=True, text=True, check=False
@@ -68,13 +81,51 @@ def test_pc_latest_checkpoint_falls_back_after_a_failed_load():
     with tempfile.TemporaryDirectory() as temporary_directory:
         root = Path(temporary_directory)
         for step in (250, 500, 750):
-            (root / f"checkpoint-{step}").mkdir()
+            checkpoint = root / f"checkpoint-{step}"
+            checkpoint.mkdir()
+            _write_required_pc_checkpoint_files(checkpoint)
         accelerator = FakeAccelerator()
 
         resumed = load_pc_checkpoint_with_fallback(accelerator, root, "latest")
 
     assert resumed.name == "checkpoint-500"
     assert accelerator.attempts == ["checkpoint-750", "checkpoint-500"]
+
+
+@pytest.mark.parametrize(
+    "missing_file", [
+        "model.safetensors",
+        "optimizer.bin",
+        "scheduler.bin",
+        "random_states_0.pkl",
+    ],
+)
+def test_pc_latest_checkpoint_skips_missing_required_file_before_loading(
+    tmp_path, missing_file
+):
+    class FakeAccelerator:
+        process_index = 0
+
+        def __init__(self):
+            self.attempts = []
+
+        def load_state(self, path):
+            self.attempts.append(Path(path).name)
+
+    incomplete_checkpoint = tmp_path / "checkpoint-750"
+    incomplete_checkpoint.mkdir()
+    for required_file in _REQUIRED_PC_CHECKPOINT_FILES:
+        if required_file != missing_file:
+            (incomplete_checkpoint / required_file).touch()
+    intact_checkpoint = tmp_path / "checkpoint-500"
+    intact_checkpoint.mkdir()
+    _write_required_pc_checkpoint_files(intact_checkpoint)
+    accelerator = FakeAccelerator()
+
+    resumed = load_pc_checkpoint_with_fallback(accelerator, tmp_path, "latest")
+
+    assert resumed == intact_checkpoint
+    assert accelerator.attempts == ["checkpoint-500"]
 
 
 def test_pc_explicit_checkpoint_propagates_load_failure(tmp_path):
@@ -91,7 +142,9 @@ def test_pc_explicit_checkpoint_propagates_load_failure(tmp_path):
 
 def test_pc_latest_checkpoint_reports_all_failed_candidates(tmp_path):
     for step in (250, 500):
-        (tmp_path / f"checkpoint-{step}").mkdir()
+        checkpoint = tmp_path / f"checkpoint-{step}"
+        checkpoint.mkdir()
+        _write_required_pc_checkpoint_files(checkpoint)
 
     class FakeAccelerator:
         def load_state(self, path):
@@ -112,6 +165,7 @@ def _write_history_model_checkpoint(checkpoint):
             parameter.fill_((index + 1) / 100)
     checkpoint.mkdir()
     torch.save(model.state_dict(), checkpoint / "model.pt")
+    _write_required_pc_checkpoint_files(checkpoint)
     return model
 
 
