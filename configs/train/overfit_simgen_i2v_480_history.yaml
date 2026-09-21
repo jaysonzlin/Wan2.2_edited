@@ -19,12 +19,12 @@ training:
   train_batch_size: 1
   gradient_accumulation_steps: 1
   max_train_steps: 40000
-  learning_rate: 1.0e-5
+  learning_rate: 5.0e-6
   weight_decay: 0.1
   adam_beta1: 0.9
-  adam_beta2: 0.99
+  adam_beta2: 0.95
   adam_epsilon: 1.0e-8
-  warmup_steps: 200
+  warmup_steps: 1000
   lr_scheduler: constant
   max_grad_norm: 1.0
   text_dropout_probability: 0.1

@@ -1,6 +1,7 @@
 """Overfit Wan2.2-TI2V-5B on native 480x480 SimGen sample_0 video frames."""
 
 import argparse
+from datetime import timedelta
 import math
 import shutil
 from pathlib import Path
@@ -261,6 +262,21 @@ def visualization_path(output_dir: str | Path, step: int) -> Path:
     return Path(output_dir) / "vis" / f"step_{step:05d}.mp4"
 
 
+def run_rank_zero_visualization(accelerator, visualization) -> None:
+    """Run a rank-zero visualization without letting peers enter DDP first."""
+    accelerator.wait_for_everyone()
+    if accelerator.is_main_process:
+        visualization()
+    accelerator.wait_for_everyone()
+
+
+def visualization_process_group_kwargs():
+    """Allow rank-zero sampling to finish before distributed peers time out."""
+    from accelerate.utils import InitProcessGroupKwargs
+
+    return InitProcessGroupKwargs(timeout=timedelta(minutes=30))
+
+
 def main() -> None:
     args = parse_args()
     from accelerate import Accelerator
@@ -284,6 +300,7 @@ def main() -> None:
         gradient_accumulation_steps=training["gradient_accumulation_steps"],
         mixed_precision=training["mixed_precision"],
         log_with="wandb",
+        kwargs_handlers=[visualization_process_group_kwargs()],
     )
     set_seed(training["seed"])
     init_kwargs = {"wandb": {}}
@@ -419,28 +436,28 @@ def main() -> None:
                     prune_checkpoints(
                         output_dir, training["checkpoints_total_limit"]
                     )
-            if (
-                accelerator.is_main_process
-                and global_step % training["visualization_every_steps"] == 0
-            ):
-                latent = sample_visualization_latent(
-                    accelerator.unwrap_model(model),
-                    vae,
-                    text_encoder,
-                    videos[0],
-                    data["prompt"],
-                    unconditional_prompt,
-                    ti2v_5B,
-                    training["time_shift"],
-                    training["visualization_seed"],
-                    training["visualization_cfg_scale"],
-                )
-                save_visualization(
-                    vae,
-                    latent,
-                    visualization_path(output_dir, global_step),
-                    ti2v_5B.sample_fps,
-                )
+            if global_step % training["visualization_every_steps"] == 0:
+                def save_periodic_visualization() -> None:
+                    latent = sample_visualization_latent(
+                        accelerator.unwrap_model(model),
+                        vae,
+                        text_encoder,
+                        videos[0],
+                        data["prompt"],
+                        unconditional_prompt,
+                        ti2v_5B,
+                        training["time_shift"],
+                        training["visualization_seed"],
+                        training["visualization_cfg_scale"],
+                    )
+                    save_visualization(
+                        vae,
+                        latent,
+                        visualization_path(output_dir, global_step),
+                        ti2v_5B.sample_fps,
+                    )
+
+                run_rank_zero_visualization(accelerator, save_periodic_visualization)
             if global_step >= training["max_train_steps"]:
                 break
 

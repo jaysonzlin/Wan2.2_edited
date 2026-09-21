@@ -1,12 +1,14 @@
 import os
 import subprocess
 import sys
+from datetime import timedelta
 from pathlib import Path
 
 import torch
 import pytest
 from PIL import Image
 
+import train_i2v_simgen_480_overfit as simgen_i2v
 from train_i2v_simgen_480_overfit import (
     build_dataset,
     load_checkpoint_with_fallback,
@@ -37,6 +39,31 @@ def test_visualization_latent_pins_four_history_slots() -> None:
     assert latent.shape == clean_latents.shape
     assert torch.equal(latent[:, :4], clean_latents[:, :4])
     assert not torch.equal(latent[:, 4:], clean_latents[:, 4:])
+
+
+def test_rank_zero_visualization_blocks_other_ranks_until_it_finishes() -> None:
+    events: list[str] = []
+
+    class FakeAccelerator:
+        is_main_process = True
+
+        def wait_for_everyone(self) -> None:
+            events.append("barrier")
+
+    assert hasattr(simgen_i2v, "run_rank_zero_visualization")
+    simgen_i2v.run_rank_zero_visualization(
+        FakeAccelerator(), lambda: events.append("visualization")
+    )
+
+    assert events == ["barrier", "visualization", "barrier"]
+
+
+def test_visualization_process_group_timeout_allows_thirty_minutes() -> None:
+    assert hasattr(simgen_i2v, "visualization_process_group_kwargs")
+
+    kwargs = simgen_i2v.visualization_process_group_kwargs()
+
+    assert kwargs.timeout == timedelta(minutes=30)
 
 
 def _make_rgb_sequence(root: Path) -> None:
