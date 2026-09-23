@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 #SBATCH --mail-user=jlin3@college.harvard.edu
 #SBATCH --mail-type=BEGIN,END,FAIL
 #SBATCH --job-name=joint_simgen_8gpu_pc200k
@@ -18,52 +18,87 @@
 
 set -euo pipefail
 
-export PROJECT_DIR="/n/lab_storage/ydu_lab/jaysonzlin/Wan2.2_edited"
-export RESUME_FROM_CHECKPOINT="${RESUME_FROM_CHECKPOINT:-}"
+module load Mambaforge
+module load cuda/12.4.1
+module load gcc/9.5.0-fasrc01
+
+PROJECT_DIR="${PROJECT_DIR:-/n/lab_storage/ydu_lab/jaysonzlin/Wan2.2_edited}"
+DEFAULT_MAMBA_ENV_PREFIX="/n/holylabs/ydu_lab/Lab/jaysonzlin/wan2-2-mamba"
+MAMBA_ENV_PREFIX="${MAMBA_ENV_PREFIX:-${DEFAULT_MAMBA_ENV_PREFIX}}"
+PYTHON_BIN="${MAMBA_ENV_PREFIX}/bin/python"
+ACCELERATE_BIN="${MAMBA_ENV_PREFIX}/bin/accelerate"
+RESUME_FROM_CHECKPOINT="${RESUME_FROM_CHECKPOINT:-}"
+
+if [[ ! -x "${PYTHON_BIN}" || ! -x "${ACCELERATE_BIN}" ]]; then
+    echo "The Mamba training environment is incomplete: ${MAMBA_ENV_PREFIX}" >&2
+    echo "Build it first: ${PROJECT_DIR}/create_mamba_env.sh --from-sif-lock --recreate" >&2
+    exit 1
+fi
+
+if [[ ! -f "${PROJECT_DIR}/configs/accelerate/h200_8gpu_2node.yaml" ]]; then
+    echo "PROJECT_DIR does not contain the eight-GPU Accelerate configuration: ${PROJECT_DIR}" >&2
+    exit 1
+fi
 
 cd "${PROJECT_DIR}"
-mkdir -p logs
+mkdir -p "logs/nccl-joint-simgen-mamba-${SLURM_JOB_ID}"
 
 MASTER_HOST=$(scontrol show hostnames "${SLURM_JOB_NODELIST}" | head -n 1)
-export MASTER_ADDR=$(getent ahostsv4 "${MASTER_HOST}" | awk 'NR == 1 {print $1}')
-export MASTER_PORT=$((20000 + SLURM_JOB_ID % 20000))
+MASTER_ADDR=$(getent ahostsv4 "${MASTER_HOST}" | awk 'NR == 1 {print $1}')
+MASTER_PORT=$((20000 + SLURM_JOB_ID % 20000))
+export MASTER_ADDR MASTER_PORT
 
 if [[ -z "${MASTER_ADDR}" ]]; then
     echo "Unable to resolve an IPv4 rendezvous address for ${MASTER_HOST}" >&2
     exit 1
 fi
 
+export NCCL_DEBUG=INFO
+export NCCL_DEBUG_SUBSYS=INIT,NET,GRAPH
+export NCCL_DEBUG_FILE="${PROJECT_DIR}/logs/nccl-joint-simgen-mamba-${SLURM_JOB_ID}/nccl.%h.%p.log"
+export TORCH_DISTRIBUTED_DEBUG=DETAIL
+export OMP_NUM_THREADS=1
+export NCCL_SOCKET_IFNAME=^lo,docker
+export NCCL_SOCKET_FAMILY=AF_INET
+export TORCH_NCCL_BLOCKING_WAIT=1
+export TORCH_NCCL_ASYNC_ERROR_HANDLING=1
+export PYTHONNOUSERSITE=1
+export PYTHONUNBUFFERED=1
+
 echo "Job ID: ${SLURM_JOB_ID}"
 echo "Restart count: ${SLURM_RESTART_COUNT:-0}"
 echo "Nodes: ${SLURM_JOB_NODELIST}"
 echo "Rendezvous: ${MASTER_ADDR}:${MASTER_PORT}"
+echo "Environment: ${MAMBA_ENV_PREFIX}"
+echo "NCCL logs: ${PROJECT_DIR}/logs/nccl-joint-simgen-mamba-${SLURM_JOB_ID}"
 echo "Resume setting: ${RESUME_FROM_CHECKPOINT:-fresh PC-200k initialization}"
 echo "Start time: $(date)"
 
-srun \
-    --export=ALL,PROJECT_DIR="${PROJECT_DIR}",MASTER_ADDR="${MASTER_ADDR}",MASTER_PORT="${MASTER_PORT}",RESUME_FROM_CHECKPOINT="${RESUME_FROM_CHECKPOINT}" \
-    --nodes=2 --ntasks=2 --ntasks-per-node=1 bash -lc '
-    echo "Node rank: ${SLURM_NODEID}; host: $(hostname); CUDA_VISIBLE_DEVICES: ${CUDA_VISIBLE_DEVICES:-not set}"
-    nvidia-smi
-    export PYTHONUNBUFFERED=1
-    resume_overrides=()
-    if [[ -n "${RESUME_FROM_CHECKPOINT}" ]]; then
-        resume_overrides=(
-            training.pretrained_pc_weights=null
-            "training.resume_from_checkpoint=${RESUME_FROM_CHECKPOINT}"
-        )
-    fi
-    exec singularity exec --nv \
-        -B /n/holylabs \
-        -B /net/holy-isilon \
-        -B /tmp:/dev/shm \
-        "${PROJECT_DIR}/cur.sif" \
-        accelerate launch \
+srun --cpu-bind=cores --nodes=2 --ntasks=2 --ntasks-per-node=1 \
+    --export=ALL,PROJECT_DIR="${PROJECT_DIR}",MAMBA_ENV_PREFIX="${MAMBA_ENV_PREFIX}",MASTER_ADDR="${MASTER_ADDR}",MASTER_PORT="${MASTER_PORT}",RESUME_FROM_CHECKPOINT="${RESUME_FROM_CHECKPOINT}" \
+    bash -lc '
+        set -euo pipefail
+        echo "Node rank: ${SLURM_NODEID}; host: $(hostname); CUDA_VISIBLE_DEVICES: ${CUDA_VISIBLE_DEVICES:-not set}"
+        nvidia-smi --query-gpu=name,uuid,pci.bus_id,compute_cap --format=csv,noheader
+        nvidia-smi topo -m
+        ibstat || true
+
+        if [[ -n "${RESUME_FROM_CHECKPOINT}" ]]; then
+            exec "${MAMBA_ENV_PREFIX}/bin/accelerate" launch \
+                --config_file configs/accelerate/h200_8gpu_2node.yaml \
+                --machine_rank "${SLURM_NODEID}" \
+                --main_process_ip "${MASTER_ADDR}" \
+                --main_process_port "${MASTER_PORT}" \
+                joint_simgen.py \
+                --config configs/train/joint_simgen_480_8gpu_pc200k.yaml \
+                training.pretrained_pc_weights=null \
+                "training.resume_from_checkpoint=${RESUME_FROM_CHECKPOINT}"
+        fi
+        exec "${MAMBA_ENV_PREFIX}/bin/accelerate" launch \
             --config_file configs/accelerate/h200_8gpu_2node.yaml \
             --machine_rank "${SLURM_NODEID}" \
             --main_process_ip "${MASTER_ADDR}" \
             --main_process_port "${MASTER_PORT}" \
             joint_simgen.py \
-            --config configs/train/joint_simgen_480_8gpu_pc200k.yaml \
-            "${resume_overrides[@]}"
+            --config configs/train/joint_simgen_480_8gpu_pc200k.yaml
 '
