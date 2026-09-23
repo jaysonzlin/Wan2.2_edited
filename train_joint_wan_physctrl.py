@@ -199,6 +199,22 @@ def _joint_checkpoint_paths(output_dir: Path, setting: str | None) -> list[Path]
     )
 
 
+def _missing_joint_checkpoint_files(checkpoint: Path, process_index: int) -> list[str]:
+    """List the Accelerate state files required to resume joint training."""
+    missing_files = [
+        filename
+        for filename in (
+            "optimizer.bin",
+            "scheduler.bin",
+            f"random_states_{process_index}.pkl",
+        )
+        if not (checkpoint / filename).is_file()
+    ]
+    if not (checkpoint / "model.safetensors").is_file():
+        missing_files.append("model.safetensors")
+    return missing_files
+
+
 def load_joint_checkpoint_with_fallback(
     accelerator, output_dir: Path, setting: str | None
 ) -> Path | None:
@@ -208,12 +224,29 @@ def load_joint_checkpoint_with_fallback(
         return None
     failures = []
     for checkpoint in checkpoints:
+        if setting == "latest":
+            missing_files = _missing_joint_checkpoint_files(
+                checkpoint, getattr(accelerator, "process_index", 0)
+            )
+            if missing_files:
+                error = FileNotFoundError(
+                    "missing required checkpoint files: " + ", ".join(missing_files)
+                )
+                failures.append((checkpoint, error))
+                print(
+                    f"Could not load {checkpoint}; trying the next most recent "
+                    f"checkpoint: {error}"
+                )
+                continue
         try:
             accelerator.load_state(checkpoint)
         except Exception as error:
             if setting != "latest":
                 raise
             failures.append((checkpoint, error))
+            print(
+                f"Could not load {checkpoint}; trying the next most recent checkpoint: {error}"
+            )
         else:
             return checkpoint
     attempted = ", ".join(path.name for path, _ in failures)

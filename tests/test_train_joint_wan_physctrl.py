@@ -286,15 +286,37 @@ class _FakeAccelerator:
             raise RuntimeError("incomplete checkpoint")
 
 
+def _write_complete_joint_checkpoint(path: Path, process_index: int = 0) -> None:
+    path.mkdir()
+    for filename in (
+        "model.safetensors",
+        "optimizer.bin",
+        "scheduler.bin",
+        f"random_states_{process_index}.pkl",
+    ):
+        (path / filename).touch()
+
+
 def test_joint_resume_latest_falls_back_from_incomplete_checkpoint(tmp_path):
     for step in (50, 100):
-        (tmp_path / f"checkpoint-{step}").mkdir()
+        _write_complete_joint_checkpoint(tmp_path / f"checkpoint-{step}")
     accelerator = _FakeAccelerator({"checkpoint-100"})
 
     path = load_joint_checkpoint_with_fallback(accelerator, tmp_path, "latest")
 
     assert path.name == "checkpoint-50"
     assert accelerator.attempts == ["checkpoint-100", "checkpoint-50"]
+
+
+def test_joint_resume_latest_skips_checkpoint_missing_required_state_files(tmp_path):
+    _write_complete_joint_checkpoint(tmp_path / "checkpoint-50")
+    (tmp_path / "checkpoint-100").mkdir()
+    accelerator = _FakeAccelerator()
+
+    path = load_joint_checkpoint_with_fallback(accelerator, tmp_path, "latest")
+
+    assert path.name == "checkpoint-50"
+    assert accelerator.attempts == ["checkpoint-50"]
 
 
 def test_joint_checkpoint_pruning_keeps_the_newest_two(tmp_path):

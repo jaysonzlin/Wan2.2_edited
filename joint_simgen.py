@@ -73,10 +73,17 @@ def _shared_generator(device: torch.device | str, seed: int) -> torch.Generator:
 def load_pretrained_pc_weights(pc_model: torch.nn.Module, weights_path: str | Path) -> None:
     """Strictly initialize the PC branch from an exported PC-model state dict."""
     path = Path(weights_path)
-    try:
-        state_dict = torch.load(path, map_location="cpu", weights_only=True)
-    except TypeError:  # pragma: no cover - retained for older PyTorch environments.
-        state_dict = torch.load(path, map_location="cpu")
+    if not path.is_file():
+        raise FileNotFoundError(f"pretrained PC weights do not exist: {path}")
+    if path.suffix == ".safetensors":
+        from safetensors.torch import load_file
+
+        state_dict = load_file(str(path), device="cpu")
+    else:
+        try:
+            state_dict = torch.load(path, map_location="cpu", weights_only=True)
+        except TypeError:  # pragma: no cover - retained for older PyTorch environments.
+            state_dict = torch.load(path, map_location="cpu")
     if not isinstance(state_dict, dict):
         raise ValueError(f"pretrained PC weights must be a state dict: {path}")
     pc_model.load_state_dict(state_dict, strict=True)

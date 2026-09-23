@@ -8,6 +8,7 @@ import joint_simgen
 import pytest
 import torch
 import yaml
+from safetensors.torch import save_file
 
 
 class SumReducer:
@@ -27,6 +28,22 @@ def test_load_pretrained_pc_weights_strictly_initializes_pc_model(tmp_path):
         pretrained.bias.fill_(-0.5)
     weights_path = tmp_path / "pc_model.pt"
     torch.save(pretrained.state_dict(), weights_path)
+    downstream = torch.nn.Linear(3, 2)
+
+    joint_simgen.load_pretrained_pc_weights(downstream, weights_path)
+
+    assert torch.equal(downstream.weight, torch.full((2, 3), 2.5))
+    assert torch.equal(downstream.bias, torch.full((2,), -0.5))
+
+
+def test_load_pretrained_pc_safetensors_export_strictly_initializes_pc_model(tmp_path):
+    """PC pretraining's model.safetensors export is accepted directly."""
+    pretrained = torch.nn.Linear(3, 2)
+    with torch.no_grad():
+        pretrained.weight.fill_(2.5)
+        pretrained.bias.fill_(-0.5)
+    weights_path = tmp_path / "model.safetensors"
+    save_file(pretrained.state_dict(), weights_path)
     downstream = torch.nn.Linear(3, 2)
 
     joint_simgen.load_pretrained_pc_weights(downstream, weights_path)
@@ -191,6 +208,27 @@ def test_8gpu_profile_has_two_machines_and_long_run_settings():
     assert training_config["visualization"]["every_steps"] == 1000
     assert training_config["validation"]["every_steps"] == 250
     assert training_config["logging"]["output_dir"] == "outputs/joint_simgen_8gpu"
+
+
+def test_pc200k_8gpu_profile_initializes_fresh_joint_training_on_first_128_samples():
+    training_config = yaml.safe_load(
+        Path("configs/train/joint_simgen_480_8gpu_pc200k.yaml").read_text()
+    )
+
+    assert training_config["data"]["train_start"] == 0
+    assert training_config["data"]["train_end"] == 127
+    assert training_config["data"]["validation_start"] == 490
+    assert training_config["data"]["validation_end"] == 499
+    assert training_config["model"]["checkpoint_dir"] == "Wan2.2-TI2V-5B"
+    assert training_config["training"]["pretrained_pc_weights"] == (
+        "/n/lab_storage/ydu_lab/jaysonzlin/Wan2.2_edited/outputs/"
+        "simgen_pc_pretraining_8gpu/checkpoint-200000/model.safetensors"
+    )
+    assert training_config["training"]["resume_from_checkpoint"] is None
+    assert training_config["training"]["warmup_steps"] == 1000
+    assert training_config["validation"]["every_steps"] == 1000
+    assert training_config["visualization"]["every_steps"] == 1000
+    assert training_config["logging"]["output_dir"] == "outputs/joint_simgen_8gpu_pc200k"
 
 
 def test_8gpu_launcher_exports_its_image_path_to_each_srun_task(tmp_path):

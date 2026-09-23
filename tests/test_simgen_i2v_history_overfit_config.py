@@ -10,7 +10,7 @@ def test_config_has_native_history_overfit_settings() -> None:
     assert config["training"]["train_batch_size"] == 1
     assert config["training"]["gradient_accumulation_steps"] == 1
     assert config["training"]["max_train_steps"] == 40_000
-    assert config["training"]["learning_rate"] == 5.0e-6
+    assert config["training"]["learning_rate"] == 1.0e-5
     assert config["training"]["adam_beta2"] == 0.95
     assert config["training"]["warmup_steps"] == 1_000
     assert config["training"]["num_train_timesteps"] == 10_000
