@@ -3,11 +3,13 @@
 #SBATCH --mail-type=BEGIN,END,FAIL
 #SBATCH --job-name=joint_simgen_8gpu_pc200k
 #SBATCH --partition=gpu_requeue
-#SBATCH --constraint=h200
+#SBATCH --constraint=h200&holyndr
+#SBATCH --exclude=holygpu8a12204,holygpu8a18103
+#SBATCH --switches=1
 #SBATCH --nodes=2
 #SBATCH --ntasks=2
 #SBATCH --ntasks-per-node=1
-#SBATCH --gres=gpu:4
+#SBATCH --gres=gpu:nvidia_h200:4
 #SBATCH --cpus-per-task=16
 #SBATCH --mem=128G
 #SBATCH --time=12:00:00

@@ -77,3 +77,9 @@ def test_joint_pc200k_launcher_runs_the_mamba_accelerate_environment_without_pre
         "--machine_rank 0 --main_process_ip 10.0.0.1 --main_process_port 32345 "
         "joint_simgen.py --config configs/train/joint_simgen_480_8gpu_pc200k.yaml"
     ) in calls
+
+    source = script.read_text()
+    assert "#SBATCH --constraint=h200&holyndr" in source
+    assert "#SBATCH --exclude=holygpu8a12204,holygpu8a18103" in source
+    assert "#SBATCH --switches=1" in source
+    assert "#SBATCH --gres=gpu:nvidia_h200:4" in source
