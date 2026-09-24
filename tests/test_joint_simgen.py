@@ -226,8 +226,8 @@ def test_pc200k_8gpu_profile_initializes_fresh_joint_training_on_first_128_sampl
     )
     assert training_config["training"]["resume_from_checkpoint"] is None
     assert training_config["training"]["warmup_steps"] == 1000
-    assert training_config["training"]["checkpoint_every_steps"] == 250
-    assert training_config["validation"]["every_steps"] == 250
+    assert training_config["training"]["checkpoint_every_steps"] == 1000
+    assert training_config["validation"]["every_steps"] == 500
     assert training_config["visualization"]["every_steps"] == 1000
     assert training_config["logging"]["output_dir"] == "outputs/joint_simgen_8gpu_pc200k"
 

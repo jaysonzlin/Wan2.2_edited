@@ -39,8 +39,8 @@ def validate_simgen_joint_config(config: dict) -> None:
     expected_validation_range = {"validation_start": 490, "validation_end": 499}
     if any(data.get(key) != value for key, value in expected_validation_range.items()):
         raise ValueError("validation split must be sample_490 through sample_499")
-    if config.get("validation", {}).get("every_steps") not in {250, 1000}:
-        raise ValueError("validation.every_steps must be 250 or 1000")
+    if config.get("validation", {}).get("every_steps") not in {250, 500, 1000}:
+        raise ValueError("validation.every_steps must be 250, 500, or 1000")
     if config.get("visualization", {}).get("every_steps") not in {250, 1000}:
         raise ValueError("visualization.every_steps must be 250 or 1000")
     expected_optimizer = {

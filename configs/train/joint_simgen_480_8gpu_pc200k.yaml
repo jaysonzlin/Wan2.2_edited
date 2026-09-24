@@ -37,7 +37,7 @@ training:
   lr_scheduler: constant
   max_grad_norm: 2.0
   mixed_precision: bf16
-  checkpoint_every_steps: 250
+  checkpoint_every_steps: 1000
   checkpoints_total_limit: 2
   resume_from_checkpoint: null
   pretrained_pc_weights: /n/lab_storage/ydu_lab/jaysonzlin/Wan2.2_edited/outputs/simgen_pc_pretraining_8gpu/checkpoint-200000/model.safetensors
@@ -47,7 +47,7 @@ visualization:
   every_steps: 1000
   fps: 12
 validation:
-  every_steps: 250
+  every_steps: 500
 logging:
   output_dir: outputs/joint_simgen_8gpu_pc200k
   report_to: wandb

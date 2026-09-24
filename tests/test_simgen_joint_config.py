@@ -31,6 +31,9 @@ def test_simgen_config_requires_480_history_flow_and_ddpm():
     config["validation"]["every_steps"] = 1000
     validate_simgen_joint_config(config)
 
+    config["validation"]["every_steps"] = 500
+    validate_simgen_joint_config(config)
+
     config["data"]["train_end"] = 127
     validate_simgen_joint_config(config)
 
