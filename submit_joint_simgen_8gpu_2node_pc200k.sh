@@ -12,7 +12,7 @@
 #SBATCH --gres=gpu:nvidia_h200:4
 #SBATCH --cpus-per-task=16
 #SBATCH --mem=96G
-#SBATCH --time=12:00:00
+#SBATCH --time=24:00:00
 #SBATCH --requeue
 #SBATCH --open-mode=append
 #SBATCH --output=/n/lab_storage/ydu_lab/jaysonzlin/Wan2.2_edited/logs/joint_simgen_8gpu_pc200k_%j.out

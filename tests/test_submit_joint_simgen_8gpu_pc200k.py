@@ -92,3 +92,4 @@ def test_joint_pc200k_launcher_preflights_then_launches_in_a_fresh_srun(
     assert "#SBATCH --switches=1" in source
     assert "#SBATCH --gres=gpu:nvidia_h200:4" in source
     assert "#SBATCH --mem=96G" in source
+    assert "#SBATCH --time=24:00:00" in source
