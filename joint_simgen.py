@@ -3,9 +3,12 @@
 from __future__ import annotations
 
 import argparse
+from contextlib import contextmanager
 import json
+import logging
 import os
 from pathlib import Path
+import time
 
 import torch
 
@@ -24,6 +27,41 @@ from training.simgen_joint_config import load_simgen_joint_config
 from training.simgen_joint_dataset import SimGenJointDataset, simgen_joint_collate
 from training.simgen_utonia_features import SimGenUtoniaCache, prepare_simgen_utonia_cache
 from training.utonia_features import UtoniaFeatureExtractor
+
+
+LOGGER = logging.getLogger(__name__)
+
+
+@contextmanager
+def _checkpoint_operation(
+    operation: str, checkpoint_path: Path, *, enabled: bool = True
+):
+    """Log the duration of one checkpoint operation on the main process."""
+    if not enabled:
+        yield
+        return
+
+    start = time.monotonic()
+    LOGGER.info(
+        "checkpoint operation started: operation=%s path=%s", operation, checkpoint_path
+    )
+    try:
+        yield
+    except BaseException:
+        LOGGER.exception(
+            "checkpoint operation failed: operation=%s path=%s elapsed_seconds=%.3f",
+            operation,
+            checkpoint_path,
+            time.monotonic() - start,
+        )
+        raise
+    else:
+        LOGGER.info(
+            "checkpoint operation completed: operation=%s path=%s elapsed_seconds=%.3f",
+            operation,
+            checkpoint_path,
+            time.monotonic() - start,
+        )
 
 
 def prepare_cache(config: dict) -> int:
@@ -401,9 +439,14 @@ def run_training(config: dict) -> None:
                     lr=f"{lr_scheduler.get_last_lr()[0]:.2e}",
                 )
             if global_step % training["checkpoint_every_steps"] == 0:
-                accelerator.save_state(output_dir / f"checkpoint-{global_step}")
+                checkpoint_path = output_dir / f"checkpoint-{global_step}"
+                with _checkpoint_operation(
+                    "save_state", checkpoint_path, enabled=accelerator.is_main_process
+                ):
+                    accelerator.save_state(checkpoint_path)
                 if accelerator.is_main_process:
-                    prune_joint_checkpoints(output_dir, training["checkpoints_total_limit"])
+                    with _checkpoint_operation("prune_checkpoints", checkpoint_path):
+                        prune_joint_checkpoints(output_dir, training["checkpoints_total_limit"])
                 accelerator.wait_for_everyone()
             if global_step % config["validation"]["every_steps"] == 0:
                 unwrapped = accelerator.unwrap_model(model)

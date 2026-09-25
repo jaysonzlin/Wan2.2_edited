@@ -1,4 +1,5 @@
 import json
+import logging
 import os
 from pathlib import Path
 import subprocess
@@ -18,6 +19,25 @@ class SumReducer:
     def reduce(self, value, reduction):
         assert reduction == "sum"
         return next(self.reduced_values)
+
+
+def test_checkpoint_operation_logs_start_and_completion(caplog, tmp_path):
+    """A stalled checkpoint reports the operation and target before its barrier."""
+    checkpoint_path = tmp_path / "checkpoint-6000"
+    caplog.set_level(logging.INFO, logger=joint_simgen.__name__)
+
+    with joint_simgen._checkpoint_operation("save_state", checkpoint_path):
+        pass
+
+    messages = [record.getMessage() for record in caplog.records]
+    assert len(messages) == 2
+    assert messages[0] == (
+        f"checkpoint operation started: operation=save_state path={checkpoint_path}"
+    )
+    assert messages[1].startswith(
+        f"checkpoint operation completed: operation=save_state path={checkpoint_path} "
+        "elapsed_seconds="
+    )
 
 
 def test_load_pretrained_pc_weights_strictly_initializes_pc_model(tmp_path):
