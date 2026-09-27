@@ -261,6 +261,17 @@ def test_video_gradient_norm_uses_wan_dit_gradients_only():
     assert video_gradient_norm(model).item() == 5.0
 
 
+def test_video_gradient_norm_without_wan_gradients_uses_the_wan_device():
+    wan_parameter = torch.nn.Parameter(torch.empty(2, device="meta"))
+    model = type(
+        "Model",
+        (),
+        {"wan_model": type("Wan", (), {"parameters": lambda self: [wan_parameter]})()},
+    )()
+
+    assert video_gradient_norm(model).device.type == "meta"
+
+
 def test_pc_gradient_norm_uses_pc_gradients_only():
     pc_parameter = torch.nn.Parameter(torch.zeros(2))
     video_parameter = torch.nn.Parameter(torch.zeros(2))

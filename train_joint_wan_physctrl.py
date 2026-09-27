@@ -162,12 +162,15 @@ def should_log_denoised_latent_mse(global_step: int, every_steps: int = 50) -> b
 
 def video_gradient_norm(model) -> torch.Tensor:
     """Return the pre-clip global L2 gradient norm for the Wan DiT only."""
+    parameters = list(model.wan_model.parameters())
     gradients = [
         parameter.grad.detach().norm()
-        for parameter in model.wan_model.parameters()
+        for parameter in parameters
         if parameter.grad is not None
     ]
-    return torch.stack(gradients).norm() if gradients else torch.zeros(())
+    if gradients:
+        return torch.stack(gradients).norm()
+    return parameters[0].new_zeros(()) if parameters else torch.zeros(())
 
 
 def create_progress_bar(total: int, initial: int, enabled: bool):

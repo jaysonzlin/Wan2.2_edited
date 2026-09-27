@@ -127,6 +127,31 @@ def load_pretrained_pc_weights(pc_model: torch.nn.Module, weights_path: str | Pa
     pc_model.load_state_dict(state_dict, strict=True)
 
 
+def freeze_video_model(model: torch.nn.Module) -> None:
+    """Keep the Wan branch immutable while the PC branch and bridges train."""
+    model.wan_model.requires_grad_(False)
+    model.wan_model.eval()
+
+
+def assert_frozen_video_model(model: torch.nn.Module) -> None:
+    """Fail clearly if a frozen-video run could update the Wan branch."""
+    if model.wan_model.training:
+        raise RuntimeError("frozen-video mode requires wan_model.eval()")
+    if any(parameter.requires_grad for parameter in model.wan_model.parameters()):
+        raise RuntimeError("frozen-video mode requires all Wan parameters to be frozen")
+
+
+def frozen_video_parameter_counts(model: torch.nn.Module) -> tuple[int, int]:
+    """Return the frozen Wan and trainable non-Wan parameter totals."""
+    frozen = sum(parameter.numel() for parameter in model.wan_model.parameters())
+    trainable = sum(
+        parameter.numel()
+        for name, parameter in model.named_parameters()
+        if not name.startswith("wan_model.") and parameter.requires_grad
+    )
+    return frozen, trainable
+
+
 def _reduced_mean(accelerator, local_sum: torch.Tensor, local_count: int) -> torch.Tensor:
     """Reduce a sum/count pair without weighting ranks equally."""
     global_sum = accelerator.reduce(local_sum, reduction="sum")
@@ -303,7 +328,7 @@ def _save_simgen_visualization(
         )
 
 
-def run_training(config: dict) -> None:
+def run_training(config: dict, *, freeze_video: bool = False) -> None:
     """Train the fixed 490/10 SimGen experiment without mutating its Utonia cache."""
     data = config["data"]
     # This explicit read-only construction is the preparation guard: normal training
@@ -340,7 +365,10 @@ def run_training(config: dict) -> None:
             yaml.safe_dump(config, output)
     accelerator.wait_for_everyone()
     if logging.get("report_to"):
-        accelerator.init_trackers(logging["project"], config=config)
+        init_kwargs = {}
+        if logging.get("run_name"):
+            init_kwargs["wandb"] = {"name": logging["run_name"]}
+        accelerator.init_trackers(logging["project"], config=config, init_kwargs=init_kwargs)
 
     train_loader = DataLoader(
         train_dataset, batch_size=1, shuffle=True,
@@ -367,6 +395,8 @@ def run_training(config: dict) -> None:
     )
     if pretrained_pc_weights := training.get("pretrained_pc_weights"):
         load_pretrained_pc_weights(model.pc_model, pretrained_pc_weights)
+    if freeze_video:
+        freeze_video_model(model)
     optimizer = create_joint_optimizer(model, config["optimizer"])
     lr_scheduler = create_lr_scheduler(
         training["lr_scheduler"], optimizer, training["warmup_steps"], training["max_train_steps"],
@@ -383,6 +413,17 @@ def run_training(config: dict) -> None:
     resume_path = load_joint_checkpoint_with_fallback(
         accelerator, output_dir, training.get("resume_from_checkpoint")
     )
+    if freeze_video:
+        unwrapped = accelerator.unwrap_model(model)
+        freeze_video_model(unwrapped)
+        assert_frozen_video_model(unwrapped)
+        if accelerator.is_main_process:
+            frozen_parameters, trainable_parameters = frozen_video_parameter_counts(unwrapped)
+            print(
+                "Frozen-video mode: "
+                f"frozen Wan parameters={frozen_parameters:,}; "
+                f"trainable bridge/PC parameters={trainable_parameters:,}"
+            )
     # Cross-world-size resumes cannot recover missing rank-local RNG snapshots.
     # The requested contract is therefore a shared configured seed on every rank.
     set_seed(training["seed"], device_specific=False)
@@ -493,6 +534,9 @@ def run_training(config: dict) -> None:
                 accelerator.wait_for_everyone()
                 if was_training:
                     unwrapped.train()
+                    if freeze_video:
+                        freeze_video_model(unwrapped)
+                        assert_frozen_video_model(unwrapped)
             if global_step >= training["max_train_steps"]:
                 break
     accelerator.wait_for_everyone()
@@ -501,7 +545,7 @@ def run_training(config: dict) -> None:
     accelerator.end_training()
 
 
-def main() -> None:
+def main(*, freeze_video: bool = False) -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--config", required=True)
     parser.add_argument("--prepare-utonia-cache", action="store_true")
@@ -516,7 +560,10 @@ def main() -> None:
             )
         prepare_cache(config)
     else:
-        run_training(config)
+        if freeze_video:
+            run_training(config, freeze_video=True)
+        else:
+            run_training(config)
 
 
 if __name__ == "__main__":
