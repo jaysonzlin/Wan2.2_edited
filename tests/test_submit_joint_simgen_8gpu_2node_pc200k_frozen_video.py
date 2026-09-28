@@ -59,7 +59,9 @@ def _prepare_launcher(tmp_path: Path) -> tuple[dict[str, str], Path]:
     )
     _write_executable(
         mamba_prefix / "bin/accelerate",
-        "#!/bin/bash\nprintf 'accelerate %s\\n' \"$*\" >> \"$CALL_LOG\"\n",
+        "#!/bin/bash\n"
+        "printf 'distributed_debug=%s\\n' \"${TORCH_DISTRIBUTED_DEBUG:-unset}\" >> \"$CALL_LOG\"\n"
+        "printf 'accelerate %s\\n' \"$*\" >> \"$CALL_LOG\"\n",
     )
 
     return (
@@ -94,6 +96,7 @@ def test_frozen_video_launcher_uses_starting_checkpoint_for_an_empty_stage(
     )
 
     assert result.returncode == 0, result.stderr
+    assert "distributed_debug=INFO" in call_log.read_text()
     assert f"Resume setting: starter checkpoint {starter}" in result.stdout
     assert (
         "joint_simgen_frozen_video.py "
@@ -124,6 +127,7 @@ def test_frozen_video_launcher_prefers_its_own_latest_checkpoint(
     assert result.returncode == 0, result.stderr
     assert "Resume setting: latest frozen-video checkpoint" in result.stdout
     calls = call_log.read_text()
+    assert "distributed_debug=INFO" in calls
     assert (
         "training.resume_from_checkpoint="
         f"{tmp_path}/outputs/joint_simgen_8gpu_pc_bridge_frozen_video/checkpoint-13000"

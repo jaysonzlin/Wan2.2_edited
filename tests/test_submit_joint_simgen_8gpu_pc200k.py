@@ -51,7 +51,9 @@ def test_joint_pc200k_launcher_preflights_then_launches_in_a_fresh_srun(
     )
     _write_executable(
         mamba_prefix / "bin/accelerate",
-        "#!/bin/bash\nprintf 'accelerate %s\\n' \"$*\" >> \"$CALL_LOG\"\n",
+        "#!/bin/bash\n"
+        "printf 'distributed_debug=%s\\n' \"${TORCH_DISTRIBUTED_DEBUG:-unset}\" >> \"$CALL_LOG\"\n"
+        "printf 'accelerate %s\\n' \"$*\" >> \"$CALL_LOG\"\n",
     )
 
     result = subprocess.run(
@@ -75,6 +77,7 @@ def test_joint_pc200k_launcher_preflights_then_launches_in_a_fresh_srun(
     assert "MAMBA_PREFLIGHT_OK cuda_devices=4" in result.stdout
     calls = call_log.read_text()
     assert calls.count("srun ") == 2
+    assert "distributed_debug=INFO" in calls
     assert "module load Mambaforge" in calls
     assert "module load cuda/12.4.1" in calls
     assert "module load gcc/9.5.0-fasrc01" in calls
