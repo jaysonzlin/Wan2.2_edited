@@ -22,6 +22,7 @@ def _write_full_checkpoint(path: Path) -> None:
 def _prepare_launcher(tmp_path: Path) -> tuple[dict[str, str], Path]:
     (tmp_path / "configs/accelerate").mkdir(parents=True)
     (tmp_path / "configs/accelerate/h200_8gpu_2node.yaml").write_text("{}\n")
+    (tmp_path / "configs/accelerate/h200_4gpu.yaml").write_text("{}\n")
     bin_dir = tmp_path / "bin"
     bin_dir.mkdir()
     mamba_prefix = tmp_path / "mamba"
@@ -133,3 +134,28 @@ def test_frozen_video_launcher_prefers_its_own_latest_checkpoint(
         f"{tmp_path}/outputs/joint_simgen_8gpu_pc_bridge_frozen_video/checkpoint-13000"
     ) in calls
     assert str(starter) not in calls
+
+
+def test_single_node_frozen_video_launcher_uses_four_gpu_configuration(
+    tmp_path: Path,
+) -> None:
+    script = PROJECT_DIR / "submit_joint_simgen_4gpu_pc200k_frozen_video.sh"
+    starter = tmp_path / "source" / "checkpoint-12000"
+    _write_full_checkpoint(starter)
+    env, call_log = _prepare_launcher(tmp_path)
+
+    result = subprocess.run(
+        ["bash", script],
+        capture_output=True,
+        text=True,
+        env=env | {"STARTING_CHECKPOINT": str(starter)},
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert f"Resume setting: starter checkpoint {starter}" in result.stdout
+    assert (
+        "accelerate launch --config_file configs/accelerate/h200_4gpu.yaml "
+        "joint_simgen_frozen_video.py "
+        "--config configs/train/joint_simgen_480_8gpu_pc200k_frozen_video.yaml "
+        f"training.resume_from_checkpoint={starter}"
+    ) in call_log.read_text()
