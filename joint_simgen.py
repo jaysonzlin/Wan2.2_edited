@@ -108,6 +108,33 @@ def _shared_generator(device: torch.device | str, seed: int) -> torch.Generator:
     return torch.Generator(device=device).manual_seed(seed)
 
 
+def _debug_ddp_prepare_boundary(accelerator, model: torch.nn.Module) -> None:
+    """Log and synchronize ranks immediately before DDP preparation when requested."""
+    if os.environ.get("JOINT_SIMGEN_DEBUG_DDP_PREPARE") != "1":
+        return
+    parameters = tuple(model.parameters())
+    trainable = tuple(parameter for parameter in parameters if parameter.requires_grad)
+    rank = getattr(accelerator, "process_index", 0)
+    world_size = getattr(accelerator, "num_processes", 1)
+    print(
+        "[DEBUG-ddp-prepare] "
+        f"rank={rank}/{world_size} host={os.environ.get('HOSTNAME', 'unknown')} "
+        f"device={accelerator.device} stage=before_barrier "
+        f"parameter_tensors={len(parameters)} trainable_tensors={len(trainable)} "
+        f"trainable_parameters={sum(parameter.numel() for parameter in trainable)}",
+        flush=True,
+    )
+    barrier_started = time.monotonic()
+    accelerator.wait_for_everyone()
+    print(
+        "[DEBUG-ddp-prepare] "
+        f"rank={rank}/{world_size} host={os.environ.get('HOSTNAME', 'unknown')} "
+        f"device={accelerator.device} stage=after_barrier "
+        f"barrier_seconds={time.monotonic() - barrier_started:.3f}",
+        flush=True,
+    )
+
+
 def load_pretrained_pc_weights(pc_model: torch.nn.Module, weights_path: str | Path) -> None:
     """Strictly initialize the PC branch from an exported PC-model state dict."""
     path = Path(weights_path)
@@ -407,6 +434,7 @@ def run_training(config: dict, *, freeze_video: bool = False) -> None:
         num_train_timesteps=config["objective"]["num_train_timesteps"],
         beta_schedule=config["objective"]["beta_schedule"], prediction_type="sample", clip_sample=False,
     )
+    _debug_ddp_prepare_boundary(accelerator, model)
     model, optimizer, train_loader, lr_scheduler = accelerator.prepare(
         model, optimizer, train_loader, lr_scheduler
     )
