@@ -19,6 +19,14 @@ def _write_full_checkpoint(path: Path) -> None:
         (path / f"random_states_{rank}.pkl").write_text("state\n")
 
 
+def _write_four_gpu_checkpoint(path: Path) -> None:
+    path.mkdir(parents=True)
+    for name in ("model.safetensors", "optimizer.bin", "scheduler.bin"):
+        (path / name).write_text("state\n")
+    for rank in range(4):
+        (path / f"random_states_{rank}.pkl").write_text("state\n")
+
+
 def _prepare_launcher(tmp_path: Path) -> tuple[dict[str, str], Path]:
     (tmp_path / "configs/accelerate").mkdir(parents=True)
     (tmp_path / "configs/accelerate/h200_8gpu_2node.yaml").write_text("{}\n")
@@ -156,6 +164,33 @@ def test_single_node_frozen_video_launcher_uses_four_gpu_configuration(
     assert (
         "accelerate launch --config_file configs/accelerate/h200_4gpu.yaml "
         "joint_simgen_frozen_video.py "
-        "--config configs/train/joint_simgen_480_8gpu_pc200k_frozen_video.yaml "
+        "--config configs/train/joint_simgen_480_4gpu_pc200k_frozen_video.yaml "
         f"training.resume_from_checkpoint={starter}"
     ) in call_log.read_text()
+
+
+def test_single_node_launcher_resumes_only_its_own_four_rank_checkpoint(
+    tmp_path: Path,
+) -> None:
+    script = PROJECT_DIR / "submit_joint_simgen_4gpu_pc200k_frozen_video.sh"
+    starter = tmp_path / "source" / "checkpoint-12000"
+    _write_full_checkpoint(starter)
+    _write_full_checkpoint(
+        tmp_path / "outputs/joint_simgen_8gpu_pc_bridge_frozen_video/checkpoint-13000"
+    )
+    four_gpu_checkpoint = (
+        tmp_path / "outputs/joint_simgen_4gpu_pc_bridge_frozen_video/checkpoint-14000"
+    )
+    _write_four_gpu_checkpoint(four_gpu_checkpoint)
+    env, call_log = _prepare_launcher(tmp_path)
+
+    result = subprocess.run(
+        ["bash", script],
+        capture_output=True,
+        text=True,
+        env=env | {"STARTING_CHECKPOINT": str(starter)},
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert "Resume setting: latest frozen-video checkpoint" in result.stdout
+    assert f"training.resume_from_checkpoint={four_gpu_checkpoint}" in call_log.read_text()

@@ -29,7 +29,7 @@ MAMBA_ENV_PREFIX="${MAMBA_ENV_PREFIX:-${DEFAULT_MAMBA_ENV_PREFIX}}"
 PYTHON_BIN="${MAMBA_ENV_PREFIX}/bin/python"
 ACCELERATE_BIN="${MAMBA_ENV_PREFIX}/bin/accelerate"
 STARTING_CHECKPOINT="${STARTING_CHECKPOINT:-}"
-FROZEN_OUTPUT_DIR="${PROJECT_DIR}/outputs/joint_simgen_8gpu_pc_bridge_frozen_video"
+FROZEN_OUTPUT_DIR="${PROJECT_DIR}/outputs/joint_simgen_4gpu_pc_bridge_frozen_video"
 
 checkpoint_is_complete() {
     local checkpoint="$1"
@@ -39,7 +39,7 @@ checkpoint_is_complete() {
     for required_file in model.safetensors optimizer.bin scheduler.bin; do
         [[ -f "${checkpoint}/${required_file}" ]] || return 1
     done
-    for rank in {0..7}; do
+    for rank in {0..3}; do
         [[ -f "${checkpoint}/random_states_${rank}.pkl" ]] || return 1
     done
 }
@@ -81,7 +81,7 @@ else
         exit 1
     fi
     if ! checkpoint_is_complete "${STARTING_CHECKPOINT}"; then
-        echo "STARTING_CHECKPOINT must be a complete checkpoint-<step> directory for all eight ranks: ${STARTING_CHECKPOINT}" >&2
+        echo "STARTING_CHECKPOINT must be a complete checkpoint-<step> directory for ranks 0 through 3: ${STARTING_CHECKPOINT}" >&2
         exit 1
     fi
     RESUME_FROM_CHECKPOINT="${STARTING_CHECKPOINT}"
@@ -120,5 +120,5 @@ ibstat || true
 exec "${ACCELERATE_BIN}" launch \
     --config_file configs/accelerate/h200_4gpu.yaml \
     joint_simgen_frozen_video.py \
-    --config configs/train/joint_simgen_480_8gpu_pc200k_frozen_video.yaml \
+    --config configs/train/joint_simgen_480_4gpu_pc200k_frozen_video.yaml \
     "training.resume_from_checkpoint=${RESUME_FROM_CHECKPOINT}"
