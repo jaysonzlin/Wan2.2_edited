@@ -206,17 +206,18 @@ def visualize_frozen_video_validation(
         point_clouds = batch["point_clouds"].to(device, non_blocking=True)
         utonia_features = batch["utonia_features"].to(device, non_blocking=True)
         clean_latents = _encode_simgen_videos(vae, videos)
-        sample = pipeline(
-            condition_latent=clean_latents[0, :, :4],
-            video_shape=tuple(clean_latents.shape[1:]),
-            context=text_encoder([""], device),
-            initial_point_clouds=_visualization_history(point_clouds),
-            initial_linear_velocities=None,
-            initial_angular_velocities=None,
-            utonia_features=utonia_features[0],
-            num_inference_steps=config["sampling"]["num_inference_steps"],
-            generator=_shared_generator(device, training["seed"]),
-        )
+        with torch.autocast(device_type=device.type, dtype=torch.bfloat16):
+            sample = pipeline(
+                condition_latent=clean_latents[0, :, :4],
+                video_shape=tuple(clean_latents.shape[1:]),
+                context=text_encoder([""], device),
+                initial_point_clouds=_visualization_history(point_clouds),
+                initial_linear_velocities=None,
+                initial_angular_velocities=None,
+                utonia_features=utonia_features[0],
+                num_inference_steps=config["sampling"]["num_inference_steps"],
+                generator=_shared_generator(device, training["seed"]),
+            )
         prediction_path, target_path = validation_video_paths(
             destination, str(batch["sample_id"])
         )
