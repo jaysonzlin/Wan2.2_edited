@@ -166,6 +166,13 @@ def test_shared_generator_restarts_from_configured_seed():
     assert torch.equal(torch.rand(4, generator=first), torch.rand(4, generator=second))
 
 
+def test_validation_video_paths_pair_predictions_with_ground_truth_targets(tmp_path):
+    prediction, target = joint_simgen.validation_video_paths(tmp_path, "sample_490")
+
+    assert prediction == tmp_path / "sample_490.mp4"
+    assert target == tmp_path / "targets" / "sample_490.mp4"
+
+
 def test_reduced_mean_uses_global_loss_sum_and_example_count():
     accelerator = SumReducer([torch.tensor(5.0), torch.tensor(2)])
 

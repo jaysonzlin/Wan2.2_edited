@@ -194,3 +194,32 @@ def test_single_node_launcher_resumes_only_its_own_four_rank_checkpoint(
     assert result.returncode == 0, result.stderr
     assert "Resume setting: latest frozen-video checkpoint" in result.stdout
     assert f"training.resume_from_checkpoint={four_gpu_checkpoint}" in call_log.read_text()
+
+
+def test_validation_launcher_passes_checkpoint_and_output_directory(tmp_path: Path) -> None:
+    script = PROJECT_DIR / "submit_visualize_joint_simgen_frozen_video_validation.sh"
+    checkpoint = tmp_path / "checkpoint-8000"
+    checkpoint.mkdir()
+    (checkpoint / "model.safetensors").write_text("state\n")
+    output_dir = tmp_path / "validation-videos"
+    env, call_log = _prepare_launcher(tmp_path)
+    _write_executable(
+        tmp_path / "mamba/bin/python",
+        "#!/bin/bash\nprintf 'python %s\\n' \"$*\" >> \"$CALL_LOG\"\n",
+    )
+
+    result = subprocess.run(
+        ["bash", script],
+        capture_output=True,
+        text=True,
+        env=env | {"CHECKPOINT_PATH": str(checkpoint), "OUTPUT_DIR": str(output_dir)},
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert f"Checkpoint: {checkpoint}" in result.stdout
+    assert f"Output: {output_dir}" in result.stdout
+    assert (
+        "python visualize_joint_simgen_frozen_video_validation.py "
+        "--config configs/train/joint_simgen_480_8gpu_pc200k_frozen_video.yaml "
+        f"--checkpoint {checkpoint} --output-dir {output_dir}"
+    ) in call_log.read_text()
