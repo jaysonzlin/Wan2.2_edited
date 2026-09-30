@@ -477,6 +477,27 @@ def _save_simgen_visualization(
         )
 
 
+def _create_training_accelerator(
+    training: dict, logging_config: dict, *, freeze_video: bool
+):
+    """Create Accelerate with the DDP behavior appropriate to the training stage."""
+    from accelerate import Accelerator
+    from accelerate.utils import DistributedDataParallelKwargs
+
+    kwargs = {
+        "gradient_accumulation_steps": training["gradient_accumulation_steps"],
+        "mixed_precision": training["mixed_precision"],
+        "log_with": logging_config.get("report_to") or None,
+    }
+    if freeze_video:
+        # The frozen Wan and PC position buffers are static on every rank.  Avoid the
+        # large, redundant DDP broadcast before every forward pass across nodes.
+        kwargs["kwargs_handlers"] = [
+            DistributedDataParallelKwargs(broadcast_buffers=False)
+        ]
+    return Accelerator(**kwargs)
+
+
 def run_training(config: dict, *, freeze_video: bool = False) -> None:
     """Train the fixed 490/10 SimGen experiment without mutating its Utonia cache."""
     data = config["data"]
@@ -484,7 +505,6 @@ def run_training(config: dict, *, freeze_video: bool = False) -> None:
     # never invokes the writer and fails before any loader/optimizer setup if absent.
     SimGenUtoniaCache(data["utonia_cache_root"])
 
-    from accelerate import Accelerator
     from accelerate.utils import set_seed
     from diffusers import DDPMScheduler
     from torch.utils.data import DataLoader
@@ -498,10 +518,8 @@ def run_training(config: dict, *, freeze_video: bool = False) -> None:
     from wan.modules.pc_trajectory import PCTrajectoryModel
 
     training, logging = config["training"], config["logging"]
-    accelerator = Accelerator(
-        gradient_accumulation_steps=training["gradient_accumulation_steps"],
-        mixed_precision=training["mixed_precision"],
-        log_with=logging.get("report_to") or None,
+    accelerator = _create_training_accelerator(
+        training, logging, freeze_video=freeze_video
     )
     set_seed(training["seed"], device_specific=False)
     train_dataset, validation_dataset = build_datasets(config)

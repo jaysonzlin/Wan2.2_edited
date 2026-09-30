@@ -3,7 +3,9 @@ import logging
 import os
 from pathlib import Path
 import subprocess
+import sys
 import textwrap
+import types
 
 import joint_simgen
 import pytest
@@ -164,6 +166,44 @@ def test_shared_generator_restarts_from_configured_seed():
     second = joint_simgen._shared_generator("cpu", 42)
 
     assert torch.equal(torch.rand(4, generator=first), torch.rand(4, generator=second))
+
+
+def test_frozen_training_disables_ddp_buffer_broadcast_only_for_frozen_mode(monkeypatch):
+    """Frozen runs avoid the per-forward buffer broadcast that can hang across nodes."""
+    class FakeDistributedDataParallelKwargs:
+        def __init__(self, **kwargs):
+            self.kwargs = kwargs
+
+    class FakeAccelerator:
+        def __init__(self, **kwargs):
+            self.kwargs = kwargs
+
+    accelerate_module = types.ModuleType("accelerate")
+    accelerate_module.Accelerator = FakeAccelerator
+    accelerate_utils_module = types.ModuleType("accelerate.utils")
+    accelerate_utils_module.DistributedDataParallelKwargs = (
+        FakeDistributedDataParallelKwargs
+    )
+    monkeypatch.setitem(
+        sys.modules,
+        "accelerate",
+        accelerate_module,
+    )
+    monkeypatch.setitem(sys.modules, "accelerate.utils", accelerate_utils_module)
+    training = {"gradient_accumulation_steps": 1, "mixed_precision": "bf16"}
+    logging_config = {"report_to": "wandb"}
+
+    frozen_accelerator = joint_simgen._create_training_accelerator(
+        training, logging_config, freeze_video=True
+    )
+    normal_accelerator = joint_simgen._create_training_accelerator(
+        training, logging_config, freeze_video=False
+    )
+
+    assert frozen_accelerator.kwargs["kwargs_handlers"][0].kwargs == {
+        "broadcast_buffers": False
+    }
+    assert "kwargs_handlers" not in normal_accelerator.kwargs
 
 
 def test_validation_video_paths_pair_predictions_with_ground_truth_targets(tmp_path):
