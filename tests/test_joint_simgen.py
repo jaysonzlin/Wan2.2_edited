@@ -213,6 +213,46 @@ def test_validation_video_paths_pair_predictions_with_ground_truth_targets(tmp_p
     assert target == tmp_path / "targets" / "sample_490.mp4"
 
 
+def test_frozen_validation_renders_a_trajectory_comparison_for_each_object(
+    monkeypatch, tmp_path
+):
+    """Every frozen validation object gets its own 49-frame prediction comparison."""
+    from training import pc_visualization
+
+    saved = []
+    monkeypatch.setattr(
+        pc_visualization,
+        "save_pointcloud_comparison_mp4",
+        lambda prediction, target, output_path, fps: saved.append(
+            (prediction, target, Path(output_path), fps)
+        ),
+    )
+    point_clouds = torch.arange(1 * 2 * 49 * 1 * 2 * 3, dtype=torch.float32).reshape(
+        1, 2, 49, 1, 2, 3
+    )
+    predicted_future = torch.full((1, 2, 45, 1, 2, 3), -7.0)
+
+    joint_simgen._save_frozen_validation_pointcloud_trajectories(
+        predicted_future, point_clouds, tmp_path, "sample_490", fps=12
+    )
+
+    assert [path.relative_to(tmp_path) for _, _, path, _ in saved] == [
+        Path("pointclouds/sample_490/object_000_trajectory_comparison.mp4"),
+        Path("pointclouds/sample_490/object_001_trajectory_comparison.mp4"),
+    ]
+    assert all(prediction.shape == (49, 1, 2, 3) for prediction, _, _, _ in saved)
+    assert all(target.shape == (49, 1, 2, 3) for _, target, _, _ in saved)
+    assert all(fps == 12 for _, _, _, fps in saved)
+    for object_index, (prediction, target, _, _) in enumerate(saved):
+        assert torch.equal(
+            torch.as_tensor(prediction[:4, 0]), point_clouds[0, object_index, :4, 0]
+        )
+        assert torch.equal(
+            torch.as_tensor(prediction[4:, 0]), predicted_future[0, object_index, :, 0]
+        )
+        assert torch.equal(torch.as_tensor(target[:, 0]), point_clouds[0, object_index, :, 0])
+
+
 def test_reduced_mean_uses_global_loss_sum_and_example_count():
     accelerator = SumReducer([torch.tensor(5.0), torch.tensor(2)])
 

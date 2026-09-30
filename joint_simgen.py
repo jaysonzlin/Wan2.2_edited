@@ -116,6 +116,32 @@ def validation_video_paths(output_dir: str | Path, sample_id: str) -> tuple[Path
     return root / f"{sample_id}.mp4", root / "targets" / f"{sample_id}.mp4"
 
 
+def _save_frozen_validation_pointcloud_trajectories(
+    future_point_clouds: torch.Tensor,
+    point_clouds: torch.Tensor,
+    output_dir: str | Path,
+    sample_id: str,
+    *,
+    fps: int,
+) -> None:
+    """Render one predicted-vs-target trajectory comparison for every object."""
+    from training.pc_visualization import save_pointcloud_comparison_mp4
+
+    predicted = torch.cat((point_clouds[0, :, :4], future_point_clouds[0]), dim=1)
+    sample_dir = Path(output_dir) / "pointclouds" / sample_id
+    for object_index in range(predicted.shape[0]):
+        save_pointcloud_comparison_mp4(
+            predicted[:, :, 0].permute(1, 0, 2, 3).cpu().numpy()[
+                :, object_index : object_index + 1
+            ],
+            point_clouds[0, :, :, 0].permute(1, 0, 2, 3).cpu().numpy()[
+                :, object_index : object_index + 1
+            ],
+            sample_dir / f"object_{object_index:03d}_trajectory_comparison.mp4",
+            fps,
+        )
+
+
 def _save_simgen_target_video(video: torch.Tensor, output_file: Path, fps: int) -> None:
     """Write one normalized [frames, RGB, height, width] SimGen target video."""
     from imageio.v2 import get_writer
@@ -223,6 +249,13 @@ def visualize_frozen_video_validation(
         )
         save_visualization(vae, sample.video_latent, prediction_path, config["visualization"]["fps"])
         _save_simgen_target_video(videos[0], target_path, config["visualization"]["fps"])
+        _save_frozen_validation_pointcloud_trajectories(
+            sample.future_point_clouds,
+            point_clouds,
+            destination,
+            str(batch["sample_id"]),
+            fps=config["visualization"]["fps"],
+        )
         print(
             f"Rendered validation sample {index + 1}/{len(validation_dataset)}: "
             f"{prediction_path}",
