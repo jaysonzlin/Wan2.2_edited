@@ -64,6 +64,16 @@ def _checkpoint_operation(
         )
 
 
+def _validation_debug(stage: str, **context: object) -> None:
+    """Emit a flushed, rank-zero validation boundary marker for stall diagnosis."""
+    details = " ".join(f"{name}={value}" for name, value in context.items())
+    print(
+        f"[DEBUG-validation] monotonic_seconds={time.monotonic():.3f} "
+        f"stage={stage} {details}",
+        flush=True,
+    )
+
+
 def prepare_cache(config: dict) -> int:
     """Create the three explicit canonical sample_0 feature records."""
     data = config["data"]
@@ -706,32 +716,71 @@ def run_training(config: dict, *, freeze_video: bool = False) -> None:
                             unit="batch",
                             dynamic_ncols=True,
                         )
-                        for validation_batch in validation_progress:
+                        _validation_debug("before_validation_iterator", global_step=global_step)
+                        validation_iterator = iter(validation_progress)
+                        validation_batch_index = 0
+                        while True:
+                            _validation_debug(
+                                "before_fetch",
+                                global_step=global_step,
+                                batch_index=validation_batch_index,
+                            )
+                            try:
+                                validation_batch = next(validation_iterator)
+                            except StopIteration:
+                                _validation_debug(
+                                    "after_validation_batches",
+                                    global_step=global_step,
+                                    batch_count=validation_batch_index,
+                                )
+                                break
+                            _validation_debug(
+                                "after_fetch",
+                                global_step=global_step,
+                                batch_index=validation_batch_index,
+                            )
+                            _validation_debug(
+                                "before_forward",
+                                global_step=global_step,
+                                batch_index=validation_batch_index,
+                            )
                             validation_outputs = _joint_simgen_losses(
                                 validation_batch, unwrapped, vae, text_encoder,
                                 noise_scheduler, validation_generator, accelerator.device,
                                 config["objective"],
+                            )
+                            _validation_debug(
+                                "after_forward",
+                                global_step=global_step,
+                                batch_index=validation_batch_index,
                             )
                             validation_loss, validation_pc_loss = _validation_loss_components(
                                 validation_outputs
                             )
                             validation_losses.append(validation_loss)
                             validation_pc_losses.append(validation_pc_loss)
+                            validation_batch_index += 1
+                    _validation_debug("before_metric_logging", global_step=global_step)
                     accelerator.log(
                         _validation_metrics(validation_losses, validation_pc_losses),
                         step=global_step,
                     )
+                    _validation_debug("after_metric_logging", global_step=global_step)
                     with torch.no_grad():
+                        _validation_debug("before_visualization_forward", global_step=global_step)
                         (
                             _, _, _, _, visual_latents, visual_context, visual_points, visual_features,
                         ) = _joint_simgen_losses(
                             visualization_batch, unwrapped, vae, text_encoder, noise_scheduler,
                             validation_generator, accelerator.device, config["objective"],
                         )
+                        _validation_debug("after_visualization_forward", global_step=global_step)
+                    _validation_debug("before_visualization_save", global_step=global_step)
                     _save_simgen_visualization(
                         unwrapped, vae, visual_context, visual_latents, visual_points, visual_features,
                         output_dir, global_step, config, accelerator.device,
                     )
+                    _validation_debug("after_visualization_save", global_step=global_step)
                 accelerator.wait_for_everyone()
                 if was_training:
                     unwrapped.train()

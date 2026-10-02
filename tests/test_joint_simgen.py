@@ -42,6 +42,19 @@ def test_checkpoint_operation_logs_start_and_completion(caplog, tmp_path):
     )
 
 
+def test_validation_debug_reports_the_boundary_and_context(monkeypatch, capsys):
+    monkeypatch.setattr(joint_simgen.time, "monotonic", lambda: 12.5)
+
+    joint_simgen._validation_debug(
+        "before_forward", global_step=4000, batch_index=0
+    )
+
+    assert capsys.readouterr().out == (
+        "[DEBUG-validation] monotonic_seconds=12.500 stage=before_forward "
+        "global_step=4000 batch_index=0\n"
+    )
+
+
 def test_load_pretrained_pc_weights_strictly_initializes_pc_model(tmp_path):
     """A PC-only export must replace every downstream PC-model parameter."""
     pretrained = torch.nn.Linear(3, 2)
