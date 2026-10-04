@@ -97,6 +97,19 @@ validates every 250 steps, and writes to `outputs/joint_simgen_8gpu`. Each
 12-hour allocation resumes manually from `latest`; both nodes must see the
 shared output directory and the prepared single-GPU Utonia cache.
 
+To render the full fixed validation set from a normal joint-training
+checkpoint on one H200, submit the validation renderer. It uses the
+checkpoint's sibling `config.yaml` and writes paired prediction/target videos
+and point-cloud comparisons below `<checkpoint>-validation` by default:
+
+```sh
+CHECKPOINT_PATH=/n/lab_storage/ydu_lab/jaysonzlin/Wan2.2_edited/outputs/joint_simgen_8gpu/checkpoint-9000 \
+  sbatch submit_visualize_joint_simgen_validation.sh
+```
+
+Set `OUTPUT_DIR=/path/to/output` to choose a destination. The Python renderer
+refuses a populated destination unless passed `--overwrite` directly.
+
 ### SimGen PC pretraining
 
 Pretrain only the history-conditioned point-cloud branch on the exact native

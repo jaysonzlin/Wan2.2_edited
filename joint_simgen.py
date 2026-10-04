@@ -172,6 +172,29 @@ def visualize_frozen_video_validation(
     config: dict, checkpoint_path: str | Path, output_dir: str | Path
 ) -> None:
     """Render all fixed validation predictions and ground-truth videos from one checkpoint."""
+    _visualize_validation(
+        config, checkpoint_path, output_dir, freeze_video_model_before_sampling=True
+    )
+
+
+@torch.inference_mode()
+def visualize_validation(
+    config: dict, checkpoint_path: str | Path, output_dir: str | Path
+) -> None:
+    """Render all validation predictions from a normal joint-training checkpoint."""
+    _visualize_validation(
+        config, checkpoint_path, output_dir, freeze_video_model_before_sampling=False
+    )
+
+
+def _visualize_validation(
+    config: dict,
+    checkpoint_path: str | Path,
+    output_dir: str | Path,
+    *,
+    freeze_video_model_before_sampling: bool,
+) -> None:
+    """Render fixed validation artifacts, optionally freezing a frozen-video checkpoint."""
     from diffusers import DDIMScheduler
     from safetensors.torch import load_file
 
@@ -220,8 +243,9 @@ def visualize_frozen_video_validation(
     model.load_state_dict(state, strict=True)
     del state
     model.eval()
-    freeze_video_model(model)
-    assert_frozen_video_model(model)
+    if freeze_video_model_before_sampling:
+        freeze_video_model(model)
+        assert_frozen_video_model(model)
     pipeline = JointWanPhysCtrlPipeline(
         model,
         FlowUniPCMultistepScheduler(
