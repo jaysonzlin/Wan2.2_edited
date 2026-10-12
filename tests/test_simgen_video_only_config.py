@@ -90,6 +90,10 @@ def test_video_only_config_loads_with_explicit_feature_width(tmp_path):
         (lambda config: config["objective"].update(point_conditioning="history"), "point_conditioning"),
         (lambda config: config["objective"].update(enable_pc_loss=True), "enable_pc_loss"),
         (lambda config: config["training"].update(pretrained_pc_weights="pc.safetensors"), "pretrained_pc_weights"),
+        (lambda config: config["training"].update(resume_from_checkpoint="outputs/joint_simgen_8gpu/checkpoint-1000"), "resume_from_checkpoint"),
+        (lambda config: config["sampling"].update(num_inference_steps=49), "num_inference_steps"),
+        (lambda config: config["logging"].update(output_dir="outputs/joint_simgen_8gpu"), "output_dir"),
+        (lambda config: config["logging"].update(run_name="joint-simgen"), "run_name"),
     ],
 )
 def test_video_only_config_rejects_non_isolated_point_conditioning(mutate, message):

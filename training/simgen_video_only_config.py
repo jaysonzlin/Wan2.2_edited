@@ -64,6 +64,10 @@ def validate_simgen_video_only_config(config: dict) -> None:
         raise ValueError("optimizer must use the established joint AdamW groups")
     if training.get("pretrained_pc_weights") is not None:
         raise ValueError("training.pretrained_pc_weights must be null")
+    if training.get("resume_from_checkpoint") not in (None, "latest"):
+        raise ValueError(
+            "training.resume_from_checkpoint must be null or latest for the isolated run"
+        )
     if training.get("max_train_steps") != 100000:
         raise ValueError("training.max_train_steps must be 100000")
     if training.get("checkpoint_every_steps") != 1000:
@@ -72,11 +76,13 @@ def validate_simgen_video_only_config(config: dict) -> None:
         raise ValueError("validation.every_steps must be 1000")
     if config.get("visualization", {}).get("every_steps") != 1000:
         raise ValueError("visualization.every_steps must be 1000")
+    if config.get("sampling", {}).get("num_inference_steps") != 50:
+        raise ValueError("sampling.num_inference_steps must be 50")
     logging = config.get("logging", {})
-    if not isinstance(logging.get("output_dir"), str) or not logging["output_dir"].strip():
-        raise ValueError("logging.output_dir must be a non-empty string")
-    if not isinstance(logging.get("run_name"), str) or not logging["run_name"].strip():
-        raise ValueError("logging.run_name must be a non-empty string")
+    if logging.get("output_dir") != "outputs/joint_simgen_video_only_3slot":
+        raise ValueError("logging.output_dir must use the isolated video-only lineage")
+    if logging.get("run_name") != "joint-simgen-video-only-3slot":
+        raise ValueError("logging.run_name must use the isolated video-only lineage")
 
 
 def load_simgen_video_only_config(path: str | Path, overrides: list[str]) -> dict:

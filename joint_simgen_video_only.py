@@ -23,6 +23,7 @@ from train_joint_wan_physctrl import (
     video_gradient_norm,
 )
 from training.simgen_video_only_conditioning import (
+    HISTORY_FRAMES,
     make_sampling_conditioning,
     make_training_conditioning,
 )
@@ -61,7 +62,7 @@ def _video_only_losses(
         generator,
         objective["time_shift"],
         objective["num_train_timesteps"],
-        history_frames=4,
+        history_frames=HISTORY_FRAMES,
     )
     conditioning = make_training_conditioning(
         batch_size=videos.shape[0],
@@ -144,7 +145,7 @@ def _save_sample_zero_visualization(model, vae, text_encoder, batch, output_dir,
     generator = torch.Generator(device=device).manual_seed(config["training"]["seed"])
     sample = _sample_video_only(
         pipeline=pipeline,
-        condition_latent=clean_latents[0, :, :4],
+        condition_latent=clean_latents[0, :, :HISTORY_FRAMES],
         video_shape=tuple(clean_latents.shape[1:]),
         context=text_encoder([""], device),
         point_count=config["data"]["num_points"],
@@ -163,7 +164,7 @@ def run_training(config: dict) -> None:
     """Train the preserved joint architecture from video supervision only."""
     from accelerate.utils import set_seed
     from torch.utils.data import DataLoader
-    from transformers import get_constant_schedule_with_warmup
+    from transformers import get_constant_schedule_with_warmup, get_cosine_schedule_with_warmup
     import yaml
 
     from training.schedules import create_lr_scheduler
@@ -208,13 +209,15 @@ def run_training(config: dict) -> None:
         PCTrajectoryModel(
             n_points=data["num_points"], n_future_frames=45, latent_dim=256,
             n_layers=8, num_heads=4, objective_type="ddpm", conditioning="history",
-            history_frames=4, utonia_feature_dim=config["model"]["utonia_feature_dim"],
+            history_frames=HISTORY_FRAMES,
+            utonia_feature_dim=config["model"]["utonia_feature_dim"],
         ),
     )
     optimizer = create_joint_optimizer(model, config["optimizer"])
     lr_scheduler = create_lr_scheduler(
         training["lr_scheduler"], optimizer, training["warmup_steps"], training["max_train_steps"],
-        cosine_factory=None, constant_factory=get_constant_schedule_with_warmup,
+        cosine_factory=get_cosine_schedule_with_warmup,
+        constant_factory=get_constant_schedule_with_warmup,
     )
     model, optimizer, train_loader, lr_scheduler = accelerator.prepare(
         model, optimizer, train_loader, lr_scheduler
@@ -263,25 +266,27 @@ def run_training(config: dict) -> None:
                 if accelerator.is_main_process:
                     prune_joint_checkpoints(output_dir, training["checkpoints_total_limit"])
                 accelerator.wait_for_everyone()
-            if global_step % config["validation"]["every_steps"] == 0 and accelerator.is_main_process:
-                unwrapped = accelerator.unwrap_model(model)
-                was_training = unwrapped.training
-                unwrapped.eval()
-                losses = []
-                with torch.no_grad():
-                    for validation_batch in validation_loader:
-                        validation_loss, _, _ = _video_only_losses(
-                            validation_batch, unwrapped, vae, text_encoder, validation_generator,
-                            accelerator.device, data, config["model"], objective,
-                        )
-                        losses.append(validation_loss)
-                accelerator.log({"validation/video_loss": torch.stack(losses).mean().item(), "validation/loss": torch.stack(losses).mean().item()}, step=global_step)
-                _save_sample_zero_visualization(
-                    unwrapped, vae, text_encoder, visualization_batch, output_dir,
-                    global_step, config, accelerator.device,
-                )
-                if was_training:
-                    unwrapped.train()
+            if global_step % config["validation"]["every_steps"] == 0:
+                if accelerator.is_main_process:
+                    unwrapped = accelerator.unwrap_model(model)
+                    was_training = unwrapped.training
+                    unwrapped.eval()
+                    losses = []
+                    with torch.no_grad():
+                        for validation_batch in validation_loader:
+                            validation_loss, _, _ = _video_only_losses(
+                                validation_batch, unwrapped, vae, text_encoder, validation_generator,
+                                accelerator.device, data, config["model"], objective,
+                            )
+                            losses.append(validation_loss)
+                    accelerator.log({"validation/video_loss": torch.stack(losses).mean().item(), "validation/loss": torch.stack(losses).mean().item()}, step=global_step)
+                    _save_sample_zero_visualization(
+                        unwrapped, vae, text_encoder, visualization_batch, output_dir,
+                        global_step, config, accelerator.device,
+                    )
+                    if was_training:
+                        unwrapped.train()
+                accelerator.wait_for_everyone()
             if global_step >= training["max_train_steps"]:
                 break
     accelerator.wait_for_everyone()
