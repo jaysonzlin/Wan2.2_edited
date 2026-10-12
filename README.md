@@ -97,6 +97,23 @@ validates every 250 steps, and writes to `outputs/joint_simgen_8gpu`. Each
 12-hour allocation resumes manually from `latest`; both nodes must see the
 shared output directory and the prepared single-GPU Utonia cache.
 
+### Video-only three-slot ablation
+
+The video-only ablation retains the joint model and optimizer groups but feeds
+its PC pathway three fixed-shape Gaussian noise slots. It reads only `view_0`
+video frames at runtime, optimizes only video flow loss, and writes video-only
+sample-0 artifacts to a separate output lineage:
+
+```sh
+sbatch submit_joint_simgen_8gpu_2node_mamba_video_only_3slot.sh
+```
+
+`model.utonia_feature_dim` in
+`configs/train/joint_simgen_480_8gpu_video_only_3slot.yaml` is static so the
+PC fusion layers retain baseline shapes without loading Utonia features. Before
+the first cluster run, compare its value with one existing Utonia cache record
+and update that one integer if the cache width differs.
+
 To render the full fixed validation set from a normal joint-training
 checkpoint on one H200, submit the validation renderer. It uses the
 checkpoint's sibling `config.yaml` and writes paired prediction/target videos

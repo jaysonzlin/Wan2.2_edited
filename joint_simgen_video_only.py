@@ -10,6 +10,7 @@ import torch
 from joint_simgen import (
     _create_training_accelerator,
     _encode_simgen_videos,
+    _save_simgen_target_video,
     _shared_generator,
 )
 from train_joint_wan_physctrl import (
@@ -21,7 +22,10 @@ from train_joint_wan_physctrl import (
     prune_joint_checkpoints,
     video_gradient_norm,
 )
-from training.simgen_video_only_conditioning import make_training_conditioning
+from training.simgen_video_only_conditioning import (
+    make_sampling_conditioning,
+    make_training_conditioning,
+)
 from training.simgen_video_only_config import load_simgen_video_only_config
 from training.simgen_video_only_dataset import SimGenVideoDataset, simgen_video_collate
 from training.wan_i2v_training import (
@@ -90,6 +94,71 @@ def _video_only_losses(
     )
 
 
+def _sample_video_only(
+    *, pipeline, condition_latent, video_shape, context, point_count,
+    utonia_feature_dim, device, dtype, generator, num_inference_steps
+):
+    """Sample one video with noise conditioning fixed for the whole trajectory."""
+    history, features = make_sampling_conditioning(
+        point_count=point_count,
+        utonia_feature_dim=utonia_feature_dim,
+        device=device,
+        dtype=dtype,
+        generator=generator,
+    )
+    return pipeline(
+        condition_latent=condition_latent,
+        video_shape=video_shape,
+        context=context,
+        initial_point_clouds=history,
+        initial_linear_velocities=None,
+        initial_angular_velocities=None,
+        utonia_features=features,
+        num_inference_steps=num_inference_steps,
+        generator=generator,
+    )
+
+
+def _save_sample_zero_visualization(model, vae, text_encoder, batch, output_dir, step, config, device):
+    """Write sample-0 video artifacts without inspecting PC sampler outputs."""
+    from diffusers import DDIMScheduler
+    from train_i2v_832x480 import save_visualization
+    from wan.joint_pc_pipeline import JointWanPhysCtrlPipeline
+    from wan.utils.fm_solvers_unipc import FlowUniPCMultistepScheduler
+
+    objective = config["objective"]
+    videos = batch["video"].to(device, non_blocking=True)
+    clean_latents = _encode_simgen_videos(vae, videos)
+    pipeline = JointWanPhysCtrlPipeline(
+        model,
+        FlowUniPCMultistepScheduler(
+            num_train_timesteps=objective["num_train_timesteps"],
+            prediction_type="flow_prediction", shift=1, use_dynamic_shifting=False,
+        ),
+        DDIMScheduler(
+            num_train_timesteps=objective["num_train_timesteps"],
+            beta_schedule=objective["beta_schedule"], prediction_type="sample", clip_sample=False,
+        ),
+        time_shift=objective["time_shift"],
+    )
+    generator = torch.Generator(device=device).manual_seed(config["training"]["seed"])
+    sample = _sample_video_only(
+        pipeline=pipeline,
+        condition_latent=clean_latents[0, :, :4],
+        video_shape=tuple(clean_latents.shape[1:]),
+        context=text_encoder([""], device),
+        point_count=config["data"]["num_points"],
+        utonia_feature_dim=config["model"]["utonia_feature_dim"],
+        device=device,
+        dtype=clean_latents.dtype,
+        generator=generator,
+        num_inference_steps=config["sampling"]["num_inference_steps"],
+    )
+    destination = Path(output_dir) / "visualizations" / f"step_{step:07d}"
+    save_visualization(vae, sample.video_latent, destination / "video.mp4", config["visualization"]["fps"])
+    _save_simgen_target_video(videos[0], destination / "target.mp4", config["visualization"]["fps"])
+
+
 def run_training(config: dict) -> None:
     """Train the preserved joint architecture from video supervision only."""
     from accelerate.utils import set_seed
@@ -108,6 +177,7 @@ def run_training(config: dict) -> None:
     accelerator = _create_training_accelerator(training, logging, freeze_video=False)
     set_seed(training["seed"], device_specific=False)
     train_dataset, validation_dataset = build_datasets(config)
+    visualization_batch = simgen_video_collate([train_dataset[0]])
     output_dir = Path(logging["output_dir"])
     output_dir.mkdir(parents=True, exist_ok=True)
     if accelerator.is_main_process:
@@ -206,6 +276,10 @@ def run_training(config: dict) -> None:
                         )
                         losses.append(validation_loss)
                 accelerator.log({"validation/video_loss": torch.stack(losses).mean().item(), "validation/loss": torch.stack(losses).mean().item()}, step=global_step)
+                _save_sample_zero_visualization(
+                    unwrapped, vae, text_encoder, visualization_batch, output_dir,
+                    global_step, config, accelerator.device,
+                )
                 if was_training:
                     unwrapped.train()
             if global_step >= training["max_train_steps"]:

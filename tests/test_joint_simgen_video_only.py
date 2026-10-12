@@ -70,3 +70,36 @@ def test_video_only_losses_feed_three_synthetic_slots_and_return_video_loss(monk
     assert model.kwargs["noisy_future_state"].shape == (1, 3, 45, 1, 5, 3)
     assert model.kwargs["utonia_features"].shape == (1, 3, 5, 7)
     assert model.kwargs["frame_times"].shape == (1, 3, 49)
+
+
+def test_video_only_sampler_holds_one_three_slot_conditioning_draw(monkeypatch):
+    history = torch.full((3, 4, 5, 3), 2.0)
+    features = torch.full((3, 5, 7), -3.0)
+    monkeypatch.setattr(
+        joint_simgen_video_only,
+        "make_sampling_conditioning",
+        lambda **_kwargs: (history, features),
+    )
+    calls = []
+
+    def pipeline(**kwargs):
+        calls.append(kwargs)
+        return "sample"
+
+    sample = joint_simgen_video_only._sample_video_only(
+        pipeline=pipeline,
+        condition_latent=torch.zeros(1, 4, 2, 2),
+        video_shape=(1, 4, 2, 2),
+        context=[torch.zeros(1)],
+        point_count=5,
+        utonia_feature_dim=7,
+        device="cpu",
+        dtype=torch.float32,
+        generator=torch.Generator().manual_seed(42),
+        num_inference_steps=50,
+    )
+
+    assert sample == "sample"
+    assert calls[0]["initial_point_clouds"] is history
+    assert calls[0]["utonia_features"] is features
+    assert calls[0]["num_inference_steps"] == 50
