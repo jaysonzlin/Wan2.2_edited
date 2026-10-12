@@ -1,0 +1,228 @@
+"""Video-only noise ablation for history-conditioned joint SimGen training."""
+
+from __future__ import annotations
+
+import argparse
+from pathlib import Path
+
+import torch
+
+from joint_simgen import (
+    _create_training_accelerator,
+    _encode_simgen_videos,
+    _shared_generator,
+)
+from train_joint_wan_physctrl import (
+    _bridge_gradient_norm,
+    create_joint_optimizer,
+    create_progress_bar,
+    load_joint_checkpoint_with_fallback,
+    pc_gradient_norm,
+    prune_joint_checkpoints,
+    video_gradient_norm,
+)
+from training.simgen_video_only_conditioning import make_training_conditioning
+from training.simgen_video_only_config import load_simgen_video_only_config
+from training.simgen_video_only_dataset import SimGenVideoDataset, simgen_video_collate
+from training.wan_i2v_training import (
+    expand_latent_timesteps,
+    load_frozen_encoders,
+    load_trainable_dit,
+    make_flow_matching_batch,
+    masked_velocity_mse,
+)
+
+
+def build_datasets(config: dict) -> tuple[SimGenVideoDataset, SimGenVideoDataset]:
+    """Build the fixed video-only train and validation splits."""
+    data = config["data"]
+    train = SimGenVideoDataset(
+        data["dataset_root"], list(range(data["train_start"], data["train_end"] + 1))
+    )
+    validation = SimGenVideoDataset(
+        data["dataset_root"],
+        list(range(data["validation_start"], data["validation_end"] + 1)),
+    )
+    return train, validation
+
+
+def _video_only_losses(
+    batch, model, vae, text_encoder, generator, device, data, model_config, objective
+) -> tuple[torch.Tensor, torch.Tensor, list[torch.Tensor]]:
+    """Compute flow loss while retaining only synthetic PC-side inputs."""
+    videos = batch["video"].to(device, non_blocking=True)
+    clean_latents = _encode_simgen_videos(vae, videos)
+    flow = make_flow_matching_batch(
+        clean_latents,
+        generator,
+        objective["time_shift"],
+        objective["num_train_timesteps"],
+        history_frames=4,
+    )
+    conditioning = make_training_conditioning(
+        batch_size=videos.shape[0],
+        point_count=data["num_points"],
+        utonia_feature_dim=model_config["utonia_feature_dim"],
+        num_train_timesteps=objective["num_train_timesteps"],
+        device=device,
+        dtype=clean_latents.dtype,
+        generator=generator,
+    )
+    context = text_encoder([""] * videos.shape[0], device)
+    video_prediction, _ = model(
+        video_x=[flow.model_input[index] for index in range(videos.shape[0])],
+        video_t=expand_latent_timesteps(
+            flow.latent_timesteps, clean_latents.shape[-2], clean_latents.shape[-1]
+        ),
+        context=context,
+        seq_len=flow.latent_timesteps.shape[1]
+        * (clean_latents.shape[-2] // 2)
+        * (clean_latents.shape[-1] // 2),
+        noisy_future_state=conditioning.noisy_future_state,
+        frame_times=conditioning.frame_times,
+        init_pc=conditioning.init_pc,
+        utonia_features=conditioning.utonia_features,
+    )
+    return (
+        masked_velocity_mse(torch.stack(video_prediction), flow.velocity_target, flow.loss_mask),
+        clean_latents,
+        context,
+    )
+
+
+def run_training(config: dict) -> None:
+    """Train the preserved joint architecture from video supervision only."""
+    from accelerate.utils import set_seed
+    from torch.utils.data import DataLoader
+    from transformers import get_constant_schedule_with_warmup
+    import yaml
+
+    from training.schedules import create_lr_scheduler
+    from wan.configs.wan_ti2v_5B import ti2v_5B
+    from wan.modules.joint_wan_physctrl import JointWanPhysCtrlModel
+    from wan.modules.pc_trajectory import PCTrajectoryModel
+
+    data, training, logging, objective = (
+        config["data"], config["training"], config["logging"], config["objective"]
+    )
+    accelerator = _create_training_accelerator(training, logging, freeze_video=False)
+    set_seed(training["seed"], device_specific=False)
+    train_dataset, validation_dataset = build_datasets(config)
+    output_dir = Path(logging["output_dir"])
+    output_dir.mkdir(parents=True, exist_ok=True)
+    if accelerator.is_main_process:
+        with (output_dir / "config.yaml").open("w") as output:
+            yaml.safe_dump(config, output)
+    accelerator.wait_for_everyone()
+    if logging.get("report_to"):
+        accelerator.init_trackers(
+            logging["project"], config=config, init_kwargs={"wandb": {"name": logging["run_name"]}}
+        )
+    train_loader = DataLoader(
+        train_dataset, batch_size=1, shuffle=True,
+        num_workers=data["dataloader_num_workers"], pin_memory=True,
+        collate_fn=simgen_video_collate,
+    )
+    validation_loader = DataLoader(
+        validation_dataset, batch_size=1, shuffle=False,
+        num_workers=data["dataloader_num_workers"], pin_memory=True,
+        collate_fn=simgen_video_collate,
+    )
+    vae, text_encoder = load_frozen_encoders(
+        config["model"]["checkpoint_dir"], ti2v_5B, accelerator.device
+    )
+    model = JointWanPhysCtrlModel(
+        load_trainable_dit(
+            config["model"]["checkpoint_dir"], config["model"]["gradient_checkpointing"]
+        ),
+        PCTrajectoryModel(
+            n_points=data["num_points"], n_future_frames=45, latent_dim=256,
+            n_layers=8, num_heads=4, objective_type="ddpm", conditioning="history",
+            history_frames=4, utonia_feature_dim=config["model"]["utonia_feature_dim"],
+        ),
+    )
+    optimizer = create_joint_optimizer(model, config["optimizer"])
+    lr_scheduler = create_lr_scheduler(
+        training["lr_scheduler"], optimizer, training["warmup_steps"], training["max_train_steps"],
+        cosine_factory=None, constant_factory=get_constant_schedule_with_warmup,
+    )
+    model, optimizer, train_loader, lr_scheduler = accelerator.prepare(
+        model, optimizer, train_loader, lr_scheduler
+    )
+    resume_path = load_joint_checkpoint_with_fallback(
+        accelerator, output_dir, training.get("resume_from_checkpoint")
+    )
+    set_seed(training["seed"], device_specific=False)
+    generator = _shared_generator(accelerator.device, training["seed"])
+    validation_generator = _shared_generator(accelerator.device, training["seed"])
+    global_step = int(resume_path.name.removeprefix("checkpoint-")) if resume_path else 0
+    progress = create_progress_bar(training["max_train_steps"], global_step, accelerator.is_main_process)
+    while global_step < training["max_train_steps"]:
+        for batch in train_loader:
+            with accelerator.accumulate(model):
+                loss, _, _ = _video_only_losses(
+                    batch, model, vae, text_encoder, generator, accelerator.device,
+                    data, config["model"], objective,
+                )
+                accelerator.backward(loss)
+                unwrapped = accelerator.unwrap_model(model)
+                bridge_norm = _bridge_gradient_norm(unwrapped)
+                wan_norm = video_gradient_norm(unwrapped)
+                pc_norm = pc_gradient_norm(unwrapped)
+                if accelerator.sync_gradients:
+                    accelerator.clip_grad_norm_(model.parameters(), training["max_grad_norm"])
+                optimizer.step()
+                lr_scheduler.step()
+                optimizer.zero_grad(set_to_none=True)
+            if not accelerator.sync_gradients:
+                continue
+            global_step += 1
+            metrics = {
+                "train/video_loss": accelerator.reduce(loss.detach(), reduction="mean").item(),
+                "train/loss": accelerator.reduce(loss.detach(), reduction="mean").item(),
+                "train/bridge_gradient_norm": accelerator.reduce(bridge_norm.detach(), reduction="mean").item(),
+                "train/video_gradient_norm": accelerator.reduce(wan_norm.detach(), reduction="mean").item(),
+                "train/pc_gradient_norm": accelerator.reduce(pc_norm.detach(), reduction="mean").item(),
+                "train/learning_rate": lr_scheduler.get_last_lr()[0],
+            }
+            if accelerator.is_main_process:
+                accelerator.log(metrics, step=global_step)
+                progress.update(1)
+            if global_step % training["checkpoint_every_steps"] == 0:
+                accelerator.save_state(output_dir / f"checkpoint-{global_step}")
+                if accelerator.is_main_process:
+                    prune_joint_checkpoints(output_dir, training["checkpoints_total_limit"])
+                accelerator.wait_for_everyone()
+            if global_step % config["validation"]["every_steps"] == 0 and accelerator.is_main_process:
+                unwrapped = accelerator.unwrap_model(model)
+                was_training = unwrapped.training
+                unwrapped.eval()
+                losses = []
+                with torch.no_grad():
+                    for validation_batch in validation_loader:
+                        validation_loss, _, _ = _video_only_losses(
+                            validation_batch, unwrapped, vae, text_encoder, validation_generator,
+                            accelerator.device, data, config["model"], objective,
+                        )
+                        losses.append(validation_loss)
+                accelerator.log({"validation/video_loss": torch.stack(losses).mean().item(), "validation/loss": torch.stack(losses).mean().item()}, step=global_step)
+                if was_training:
+                    unwrapped.train()
+            if global_step >= training["max_train_steps"]:
+                break
+    accelerator.wait_for_everyone()
+    accelerator.save_state(output_dir / "final_checkpoint")
+    progress.close()
+    accelerator.end_training()
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--config", required=True)
+    parser.add_argument("overrides", nargs="*")
+    args = parser.parse_args()
+    run_training(load_simgen_video_only_config(args.config, args.overrides))
+
+
+if __name__ == "__main__":
+    main()
