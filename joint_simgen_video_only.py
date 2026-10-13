@@ -51,6 +51,16 @@ def build_datasets(config: dict) -> tuple[SimGenVideoDataset, SimGenVideoDataset
     return train, validation
 
 
+def _create_video_only_training_accelerator(training: dict, logging: dict):
+    """Allow the intentionally unsupervised final PC path in video-only DDP."""
+    return _create_training_accelerator(
+        training,
+        logging,
+        freeze_video=False,
+        find_unused_parameters=True,
+    )
+
+
 def _video_only_losses(
     batch, model, vae, text_encoder, generator, device, data, model_config, objective
 ) -> tuple[torch.Tensor, torch.Tensor, list[torch.Tensor]]:
@@ -175,7 +185,7 @@ def run_training(config: dict) -> None:
     data, training, logging, objective = (
         config["data"], config["training"], config["logging"], config["objective"]
     )
-    accelerator = _create_training_accelerator(training, logging, freeze_video=False)
+    accelerator = _create_video_only_training_accelerator(training, logging)
     set_seed(training["seed"], device_specific=False)
     train_dataset, validation_dataset = build_datasets(config)
     visualization_batch = simgen_video_collate([train_dataset[0]])

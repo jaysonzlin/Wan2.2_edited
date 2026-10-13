@@ -45,7 +45,9 @@ def test_video_only_mamba_launcher_uses_isolated_eight_gpu_contract(tmp_path):
     _write_executable(mamba_prefix / "bin/python", "#!/bin/bash\nexit 0\n")
     _write_executable(
         mamba_prefix / "bin/accelerate",
-        "#!/bin/bash\nprintf '%s\\n' \"$*\" >> \"$CALL_LOG\"\n",
+        "#!/bin/bash\n"
+        "printf 'wandb_dir=%s\\nwandb_cache_dir=%s\\n' \"$WANDB_DIR\" \"$WANDB_CACHE_DIR\" >> \"$CALL_LOG\"\n"
+        "printf '%s\\n' \"$*\" >> \"$CALL_LOG\"\n",
     )
 
     result = subprocess.run(
@@ -61,6 +63,8 @@ def test_video_only_mamba_launcher_uses_isolated_eight_gpu_contract(tmp_path):
             "SLURM_JOB_ID": "12345",
             "SLURM_JOB_NODELIST": "node-a,node-b",
             "SLURM_NODEID": "0",
+            "WANDB_DIR": "",
+            "WANDB_CACHE_DIR": "",
         },
     )
 
@@ -78,6 +82,8 @@ def test_video_only_mamba_launcher_uses_isolated_eight_gpu_contract(tmp_path):
     assert "Start time:" in result.stdout
     assert "Node rank: 0; host:" in result.stdout
     calls = call_log.read_text()
+    assert f"wandb_dir={tmp_path}/wandb" in calls
+    assert f"wandb_cache_dir={tmp_path}/wandb/cache" in calls
     assert "--config_file configs/accelerate/h200_8gpu_2node.yaml" in calls
     assert "joint_simgen_video_only.py" in calls
     assert "--config configs/train/joint_simgen_480_8gpu_video_only_3slot.yaml" in calls
@@ -127,7 +133,9 @@ def test_h200_eight_hour_launcher_uses_separate_output_lineage(tmp_path):
     _write_executable(mamba_prefix / "bin/python", "#!/bin/bash\nexit 0\n")
     _write_executable(
         mamba_prefix / "bin/accelerate",
-        "#!/bin/bash\nprintf '%s\\n' \"$*\" >> \"$CALL_LOG\"\n",
+        "#!/bin/bash\n"
+        "printf 'wandb_dir=%s\\nwandb_cache_dir=%s\\n' \"$WANDB_DIR\" \"$WANDB_CACHE_DIR\" >> \"$CALL_LOG\"\n"
+        "printf '%s\\n' \"$*\" >> \"$CALL_LOG\"\n",
     )
 
     result = subprocess.run(
@@ -143,6 +151,8 @@ def test_h200_eight_hour_launcher_uses_separate_output_lineage(tmp_path):
             "SLURM_JOB_ID": "12345",
             "SLURM_JOB_NODELIST": "node-a,node-b",
             "SLURM_NODEID": "0",
+            "WANDB_DIR": "",
+            "WANDB_CACHE_DIR": "",
         },
     )
 
@@ -152,6 +162,8 @@ def test_h200_eight_hour_launcher_uses_separate_output_lineage(tmp_path):
         in result.stdout
     )
     calls = call_log.read_text()
+    assert f"wandb_dir={tmp_path}/wandb" in calls
+    assert f"wandb_cache_dir={tmp_path}/wandb/cache" in calls
     assert "joint_simgen_video_only.py" in calls
     assert "logging.output_dir=outputs/joint_simgen_video_only_3slot_h200_8h" in calls
     assert "logging.run_name=joint-simgen-video-only-3slot-h200-8h" in calls

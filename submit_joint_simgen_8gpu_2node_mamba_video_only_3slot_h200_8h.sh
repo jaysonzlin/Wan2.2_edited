@@ -25,6 +25,8 @@ module load gcc/9.5.0-fasrc01
 PROJECT_DIR="${PROJECT_DIR:-/n/lab_storage/ydu_lab/jaysonzlin/Wan2.2_edited}"
 DEFAULT_MAMBA_ENV_PREFIX="/n/holylabs/ydu_lab/Lab/jaysonzlin/wan2-2-mamba"
 MAMBA_ENV_PREFIX="${MAMBA_ENV_PREFIX:-${DEFAULT_MAMBA_ENV_PREFIX}}"
+export WANDB_DIR="${PROJECT_DIR}/wandb"
+export WANDB_CACHE_DIR="${WANDB_DIR}/cache"
 PYTHON_BIN="${MAMBA_ENV_PREFIX}/bin/python"
 ACCELERATE_BIN="${MAMBA_ENV_PREFIX}/bin/accelerate"
 if [[ ! -x "${PYTHON_BIN}" || ! -x "${ACCELERATE_BIN}" ]]; then

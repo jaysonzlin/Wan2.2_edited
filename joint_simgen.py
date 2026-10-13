@@ -545,7 +545,11 @@ def _save_simgen_visualization(
 
 
 def _create_training_accelerator(
-    training: dict, logging_config: dict, *, freeze_video: bool
+    training: dict,
+    logging_config: dict,
+    *,
+    freeze_video: bool,
+    find_unused_parameters: bool = False,
 ):
     """Create Accelerate with the DDP behavior appropriate to the training stage."""
     from accelerate import Accelerator
@@ -556,12 +560,15 @@ def _create_training_accelerator(
         "mixed_precision": training["mixed_precision"],
         "log_with": logging_config.get("report_to") or None,
     }
+    ddp_kwargs = {}
     if freeze_video:
         # The frozen Wan and PC position buffers are static on every rank.  Avoid the
         # large, redundant DDP broadcast before every forward pass across nodes.
-        kwargs["kwargs_handlers"] = [
-            DistributedDataParallelKwargs(broadcast_buffers=False)
-        ]
+        ddp_kwargs["broadcast_buffers"] = False
+    if find_unused_parameters:
+        ddp_kwargs["find_unused_parameters"] = True
+    if ddp_kwargs:
+        kwargs["kwargs_handlers"] = [DistributedDataParallelKwargs(**ddp_kwargs)]
     return Accelerator(**kwargs)
 
 

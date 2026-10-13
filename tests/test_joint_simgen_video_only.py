@@ -8,6 +8,35 @@ import joint_simgen_video_only
 from train_joint_wan_physctrl import create_joint_optimizer
 
 
+def test_video_only_accelerator_detects_intentionally_unused_pc_tail(monkeypatch):
+    """Video-only loss leaves the final PC-output path without gradients."""
+    class FakeDistributedDataParallelKwargs:
+        def __init__(self, **kwargs):
+            self.kwargs = kwargs
+
+    class FakeAccelerator:
+        def __init__(self, **kwargs):
+            self.kwargs = kwargs
+
+    accelerate_module = types.ModuleType("accelerate")
+    accelerate_module.Accelerator = FakeAccelerator
+    accelerate_utils_module = types.ModuleType("accelerate.utils")
+    accelerate_utils_module.DistributedDataParallelKwargs = (
+        FakeDistributedDataParallelKwargs
+    )
+    monkeypatch.setitem(sys.modules, "accelerate", accelerate_module)
+    monkeypatch.setitem(sys.modules, "accelerate.utils", accelerate_utils_module)
+
+    accelerator = joint_simgen_video_only._create_video_only_training_accelerator(
+        {"gradient_accumulation_steps": 1, "mixed_precision": "bf16"},
+        {"report_to": "wandb"},
+    )
+
+    assert accelerator.kwargs["kwargs_handlers"][0].kwargs == {
+        "find_unused_parameters": True
+    }
+
+
 def test_build_datasets_uses_only_video_dataset_and_configured_ranges(monkeypatch):
     calls = []
 
