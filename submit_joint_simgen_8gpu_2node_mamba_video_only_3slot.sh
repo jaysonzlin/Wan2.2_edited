@@ -24,11 +24,17 @@ module load cuda/12.4.1
 module load gcc/9.5.0-fasrc01
 
 PROJECT_DIR="${PROJECT_DIR:-/n/lab_storage/ydu_lab/jaysonzlin/Wan2.2_edited}"
-MAMBA_ENV_PREFIX="${MAMBA_ENV_PREFIX:-/n/holylabs/ydu_lab/Lab/jaysonzlin/wan2-2-mamba}"
+DEFAULT_MAMBA_ENV_PREFIX="/n/holylabs/ydu_lab/Lab/jaysonzlin/wan2-2-mamba"
+MAMBA_ENV_PREFIX="${MAMBA_ENV_PREFIX:-${DEFAULT_MAMBA_ENV_PREFIX}}"
 PYTHON_BIN="${MAMBA_ENV_PREFIX}/bin/python"
 ACCELERATE_BIN="${MAMBA_ENV_PREFIX}/bin/accelerate"
 if [[ ! -x "${PYTHON_BIN}" || ! -x "${ACCELERATE_BIN}" ]]; then
     echo "The Mamba training environment is incomplete: ${MAMBA_ENV_PREFIX}" >&2
+    echo "Build it first: ${PROJECT_DIR}/create_mamba_env.sh --from-sif-lock --recreate" >&2
+    exit 1
+fi
+if [[ ! -f "${PROJECT_DIR}/configs/accelerate/h200_8gpu_2node.yaml" ]]; then
+    echo "PROJECT_DIR does not contain the eight-GPU Accelerate configuration: ${PROJECT_DIR}" >&2
     exit 1
 fi
 cd "${PROJECT_DIR}"
@@ -46,11 +52,25 @@ export NCCL_DEBUG_FILE="${PROJECT_DIR}/logs/nccl-joint-simgen-video-only-3slot-$
 export OMP_NUM_THREADS=1 NCCL_SOCKET_IFNAME=^lo,docker NCCL_SOCKET_FAMILY=AF_INET
 export TORCH_NCCL_BLOCKING_WAIT=1 TORCH_NCCL_ASYNC_ERROR_HANDLING=1 PYTHONNOUSERSITE=1 PYTHONUNBUFFERED=1
 
+echo "Job ID: ${SLURM_JOB_ID}"
+echo "Restart count: ${SLURM_RESTART_COUNT:-0}"
+echo "Nodes: ${SLURM_JOB_NODELIST}"
+echo "Rendezvous: ${MASTER_ADDR}:${MASTER_PORT}"
+echo "Environment: ${MAMBA_ENV_PREFIX}"
+echo "NCCL logs: ${PROJECT_DIR}/logs/nccl-joint-simgen-video-only-3slot-${SLURM_JOB_ID}"
+echo "Resume setting: latest"
+echo "Start time: $(date)"
+
 srun --cpu-bind=cores --nodes=2 --ntasks=2 --ntasks-per-node=1 \
     --export=ALL,PROJECT_DIR="${PROJECT_DIR}",MAMBA_ENV_PREFIX="${MAMBA_ENV_PREFIX}",MASTER_ADDR="${MASTER_ADDR}",MASTER_PORT="${MASTER_PORT}" \
     bash -lc '
         set -euo pipefail
-        "${MAMBA_ENV_PREFIX}/bin/python" -c "import torch; import flash_attn; import spconv.pytorch; import torch_scatter; assert torch.cuda.is_available(); assert torch.cuda.device_count() == 4"
+        echo "Node rank: ${SLURM_NODEID}; host: $(hostname); CUDA_VISIBLE_DEVICES: ${CUDA_VISIBLE_DEVICES:-not set}"
+        nvidia-smi --query-gpu=name,uuid,pci.bus_id,compute_cap --format=csv,noheader
+        nvidia-smi topo -m
+        ibstat || true
+
+        "${MAMBA_ENV_PREFIX}/bin/python" -c "import torch; import flash_attn; import spconv.pytorch; import torch_scatter; assert torch.cuda.is_available(); assert torch.cuda.device_count() == 4; print(torch.__version__, torch.version.cuda, torch.cuda.device_count())"
     '
 
 srun --cpu-bind=cores --nodes=2 --ntasks=2 --ntasks-per-node=1 \

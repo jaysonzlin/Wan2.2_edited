@@ -27,6 +27,8 @@ def test_video_only_mamba_launcher_uses_isolated_eight_gpu_contract(tmp_path):
     _write_executable(
         bin_dir / "getent", "#!/bin/bash\nprintf '10.0.0.1 STREAM node-a\\n'\n"
     )
+    _write_executable(bin_dir / "nvidia-smi", "#!/bin/bash\nexit 0\n")
+    _write_executable(bin_dir / "ibstat", "#!/bin/bash\nexit 0\n")
     _write_executable(bin_dir / "module", "#!/bin/bash\nexit 0\n")
     _write_executable(
         bin_dir / "srun",
@@ -63,6 +65,18 @@ def test_video_only_mamba_launcher_uses_isolated_eight_gpu_contract(tmp_path):
     )
 
     assert result.returncode == 0, result.stderr
+    assert "Job ID: 12345" in result.stdout
+    assert "Restart count: 0" in result.stdout
+    assert "Nodes: node-a,node-b" in result.stdout
+    assert "Rendezvous: 10.0.0.1:32345" in result.stdout
+    assert f"Environment: {mamba_prefix}" in result.stdout
+    assert (
+        f"NCCL logs: {tmp_path}/logs/nccl-joint-simgen-video-only-3slot-12345"
+        in result.stdout
+    )
+    assert "Resume setting: latest" in result.stdout
+    assert "Start time:" in result.stdout
+    assert "Node rank: 0; host:" in result.stdout
     calls = call_log.read_text()
     assert "--config_file configs/accelerate/h200_8gpu_2node.yaml" in calls
     assert "joint_simgen_video_only.py" in calls
