@@ -40,6 +40,15 @@ if [[ ! -f "${PROJECT_DIR}/configs/accelerate/h200_8gpu_2node.yaml" ]]; then
 fi
 cd "${PROJECT_DIR}"
 mkdir -p "logs/nccl-joint-simgen-video-only-3slot-h200-8h-${SLURM_JOB_ID}"
+VIDEO_ONLY_CONFIG="configs/train/joint_simgen_480_8gpu_video_only_3slot.yaml"
+VIDEO_ONLY_OVERRIDES="logging.output_dir=outputs/joint_simgen_video_only_3slot_h200_8h logging.run_name=joint-simgen-video-only-3slot-h200-8h data.train_start=0 data.train_end=127 data.validation_start=490 data.validation_end=499 validation.every_steps=1000 visualization.every_steps=1000 training.resume_from_checkpoint=latest"
+read -r -a video_only_overrides <<< "${VIDEO_ONLY_OVERRIDES}"
+"${PYTHON_BIN}" -c '
+import sys
+from training.simgen_video_only_config import load_simgen_video_only_config
+load_simgen_video_only_config(sys.argv[1], sys.argv[2:])
+' "${VIDEO_ONLY_CONFIG}" "${video_only_overrides[@]}"
+export VIDEO_ONLY_CONFIG VIDEO_ONLY_OVERRIDES
 MASTER_HOST=$(scontrol show hostnames "${SLURM_JOB_NODELIST}" | head -n 1)
 MASTER_ADDR=$(getent ahostsv4 "${MASTER_HOST}" | awk 'NR == 1 {print $1}')
 MASTER_PORT=$((20000 + SLURM_JOB_ID % 20000))
@@ -78,20 +87,13 @@ srun --cpu-bind=cores --nodes=2 --ntasks=2 --ntasks-per-node=1 \
     --export=ALL,PROJECT_DIR="${PROJECT_DIR}",MAMBA_ENV_PREFIX="${MAMBA_ENV_PREFIX}",MASTER_ADDR="${MASTER_ADDR}",MASTER_PORT="${MASTER_PORT}" \
     bash -lc '
         set -euo pipefail
+        read -r -a video_only_overrides <<< "${VIDEO_ONLY_OVERRIDES}"
         exec "${MAMBA_ENV_PREFIX}/bin/accelerate" launch \
             --config_file configs/accelerate/h200_8gpu_2node.yaml \
             --machine_rank "${SLURM_NODEID}" \
             --main_process_ip "${MASTER_ADDR}" \
             --main_process_port "${MASTER_PORT}" \
             joint_simgen_video_only.py \
-            --config configs/train/joint_simgen_480_8gpu_video_only_3slot.yaml \
-            logging.output_dir=outputs/joint_simgen_video_only_3slot_h200_8h \
-            logging.run_name=joint-simgen-video-only-3slot-h200-8h \
-            data.train_start=0 \
-            data.train_end=127 \
-            data.validation_start=490 \
-            data.validation_end=499 \
-            validation.every_steps=1000 \
-            visualization.every_steps=1000 \
-            training.resume_from_checkpoint=latest
+            --config "${VIDEO_ONLY_CONFIG}" \
+            "${video_only_overrides[@]}"
     '

@@ -79,10 +79,21 @@ def validate_simgen_video_only_config(config: dict) -> None:
     if config.get("sampling", {}).get("num_inference_steps") != 50:
         raise ValueError("sampling.num_inference_steps must be 50")
     logging = config.get("logging", {})
-    if logging.get("output_dir") != "outputs/joint_simgen_video_only_3slot":
+    output_dir = logging.get("output_dir")
+    run_name = logging.get("run_name")
+    approved_lineage_pairs = {
+        ("outputs/joint_simgen_video_only_3slot", "joint-simgen-video-only-3slot"),
+        (
+            "outputs/joint_simgen_video_only_3slot_h200_8h",
+            "joint-simgen-video-only-3slot-h200-8h",
+        ),
+    }
+    if output_dir not in {pair[0] for pair in approved_lineage_pairs}:
         raise ValueError("logging.output_dir must use the isolated video-only lineage")
-    if logging.get("run_name") != "joint-simgen-video-only-3slot":
+    if run_name not in {pair[1] for pair in approved_lineage_pairs}:
         raise ValueError("logging.run_name must use the isolated video-only lineage")
+    if (output_dir, run_name) not in approved_lineage_pairs:
+        raise ValueError("logging.output_dir and logging.run_name must use an approved lineage pair")
 
 
 def load_simgen_video_only_config(path: str | Path, overrides: list[str]) -> dict:

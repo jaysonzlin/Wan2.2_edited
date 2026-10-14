@@ -80,6 +80,27 @@ def test_video_only_config_loads_with_explicit_feature_width(tmp_path):
     assert load_simgen_video_only_config(path, []) == _config()
 
 
+def test_video_only_config_accepts_the_h200_eight_hour_lineage_pair():
+    config = _config()
+    config["logging"].update(
+        output_dir="outputs/joint_simgen_video_only_3slot_h200_8h",
+        run_name="joint-simgen-video-only-3slot-h200-8h",
+    )
+
+    validate_simgen_video_only_config(config)
+
+
+def test_video_only_config_rejects_an_unapproved_lineage_pair():
+    config = _config()
+    config["logging"].update(
+        output_dir="outputs/joint_simgen_video_only_3slot_h200_8h",
+        run_name="joint-simgen-video-only-3slot",
+    )
+
+    with pytest.raises(ValueError, match="approved lineage pair"):
+        validate_simgen_video_only_config(config)
+
+
 @pytest.mark.parametrize(
     ("mutate", "message"),
     [

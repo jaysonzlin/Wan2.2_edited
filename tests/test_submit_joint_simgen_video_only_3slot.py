@@ -42,7 +42,10 @@ def test_video_only_mamba_launcher_uses_isolated_eight_gpu_contract(tmp_path):
         "  shift\n"
         "done\n",
     )
-    _write_executable(mamba_prefix / "bin/python", "#!/bin/bash\nexit 0\n")
+    _write_executable(
+        mamba_prefix / "bin/python",
+        "#!/bin/bash\nargs=$(printf '%s' \"$*\" | tr '\\n' ' ')\nprintf 'python %s\\n' \"$args\" >> \"$CALL_LOG\"\n",
+    )
     _write_executable(
         mamba_prefix / "bin/accelerate",
         "#!/bin/bash\n"
@@ -92,6 +95,11 @@ def test_video_only_mamba_launcher_uses_isolated_eight_gpu_contract(tmp_path):
     assert "validation.every_steps=1000 visualization.every_steps=1000" in calls
     assert "training.resume_from_checkpoint=latest" in calls
     assert "joint_simgen.py" not in calls
+    preflight_calls = [
+        line for line in calls.splitlines() if "load_simgen_video_only_config" in line
+    ]
+    assert len(preflight_calls) == 1
+    assert "training.resume_from_checkpoint=latest" in preflight_calls[0]
 
 
 def test_h200_eight_hour_launcher_uses_separate_output_lineage(tmp_path):
@@ -130,7 +138,10 @@ def test_h200_eight_hour_launcher_uses_separate_output_lineage(tmp_path):
         "  shift\n"
         "done\n",
     )
-    _write_executable(mamba_prefix / "bin/python", "#!/bin/bash\nexit 0\n")
+    _write_executable(
+        mamba_prefix / "bin/python",
+        "#!/bin/bash\nargs=$(printf '%s' \"$*\" | tr '\\n' ' ')\nprintf 'python %s\\n' \"$args\" >> \"$CALL_LOG\"\n",
+    )
     _write_executable(
         mamba_prefix / "bin/accelerate",
         "#!/bin/bash\n"
@@ -167,3 +178,9 @@ def test_h200_eight_hour_launcher_uses_separate_output_lineage(tmp_path):
     assert "joint_simgen_video_only.py" in calls
     assert "logging.output_dir=outputs/joint_simgen_video_only_3slot_h200_8h" in calls
     assert "logging.run_name=joint-simgen-video-only-3slot-h200-8h" in calls
+    preflight_calls = [
+        line for line in calls.splitlines() if "load_simgen_video_only_config" in line
+    ]
+    assert len(preflight_calls) == 1
+    assert "logging.output_dir=outputs/joint_simgen_video_only_3slot_h200_8h" in preflight_calls[0]
+    assert "logging.run_name=joint-simgen-video-only-3slot-h200-8h" in preflight_calls[0]
