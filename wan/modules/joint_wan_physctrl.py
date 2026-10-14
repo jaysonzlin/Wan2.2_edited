@@ -242,9 +242,13 @@ class JointWanPhysCtrlModel(nn.Module):
                 modulation, wan_kwargs, batch_size, object_count,
             )
             if self.training and getattr(self.wan_model, "gradient_checkpointing", False):
-                hidden, point_states, controls = torch.utils.checkpoint.checkpoint(
-                    run_block, hidden, point_states, controls, use_reentrant=False
-                )
+                # DDP's autograd traversal can make non-reentrant checkpointing stop
+                # midway through this multi-output block. Recompute the entire block
+                # so its saved tensors match the original forward pass.
+                with torch.utils.checkpoint.set_checkpoint_early_stop(False):
+                    hidden, point_states, controls = torch.utils.checkpoint.checkpoint(
+                        run_block, hidden, point_states, controls, use_reentrant=False
+                    )
             else:
                 hidden, point_states, controls = run_block(hidden, point_states, controls)
         video_output = self.wan_model.unpatchify(self.wan_model.head(hidden, timestep_embedding), wan_kwargs["grid_sizes"])
