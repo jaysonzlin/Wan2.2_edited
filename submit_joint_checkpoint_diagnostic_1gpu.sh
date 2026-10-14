@@ -36,6 +36,4 @@ echo "Host: $(hostname)"
 echo "Start time: $(date)"
 nvidia-smi
 "${PYTHON_BIN}" -c 'import torch; print(torch.__version__, torch.version.cuda, torch.cuda.get_device_name())'
-"${PYTHON_BIN}" -m pytest \
-    tests/test_joint_bridge.py::test_history_utonia_paired_checkpointing_supports_backward \
-    -vv -s
+"${PYTHON_BIN}" joint_checkpoint_diagnostic.py
