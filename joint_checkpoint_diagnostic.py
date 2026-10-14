@@ -43,7 +43,7 @@ def main() -> None:
     model.train()
     model.wan_model.gradient_checkpointing = True
 
-    video, trajectories = model(
+    video, _ = model(
         video_x=[torch.randn(1, 1, 2, 2, device=device)],
         video_t=torch.tensor([[1.0]], device=device),
         context=[torch.randn(2, 4, device=device)],
@@ -59,7 +59,9 @@ def main() -> None:
         init_pc=torch.randn(1, 3, 4, 1, 2, 3, device=device),
         utonia_features=torch.randn(1, 3, 2, 3, device=device),
     )
-    (video[0].square().mean() + trajectories.square().mean()).backward()
+    # Production video-only training discards the PC prediction and backpropagates
+    # through the Wan output alone. Preserve that autograd graph here.
+    video[0].square().mean().backward()
 
     if model.wan_model.blocks[0].self_attn.q.weight.grad is None:
         raise AssertionError("Wan attention did not receive a gradient")
