@@ -209,3 +209,59 @@ def test_joint_wrapper_supports_history_pc_conditioning_and_utonia_features():
     )
 
     assert trajectories.shape == (1, 2, 45, 1, 2, 3)
+
+
+@pytest.mark.skipif(not torch.cuda.is_available(), reason="requires CUDA")
+def test_history_utonia_paired_checkpointing_supports_backward():
+    """Exercise the checkpointed paired-block path used by the 3-slot job."""
+    device = torch.device("cuda")
+    wan = WanModel(
+        model_type="ti2v",
+        patch_size=(1, 2, 2),
+        text_len=2,
+        in_dim=1,
+        dim=64,
+        ffn_dim=128,
+        freq_dim=16,
+        text_dim=4,
+        out_dim=1,
+        num_heads=1,
+        num_layers=8,
+    )
+    model = JointWanPhysCtrlModel(
+        wan,
+        PCTrajectoryModel(
+            n_points=2,
+            n_future_frames=45,
+            latent_dim=64,
+            n_layers=8,
+            num_heads=1,
+            objective_type="ddpm",
+            conditioning="history",
+            history_frames=4,
+            utonia_feature_dim=3,
+        ),
+    ).to(device)
+    model.train()
+    model.wan_model.gradient_checkpointing = True
+
+    video, trajectories = model(
+        video_x=[torch.randn(1, 1, 2, 2, device=device)],
+        video_t=torch.tensor([[1.0]], device=device),
+        context=[torch.randn(2, 4, device=device)],
+        seq_len=1,
+        noisy_future_state=torch.randn(1, 3, 45, 1, 2, 3, device=device),
+        frame_times=torch.cat(
+            (
+                torch.zeros(1, 3, 4, device=device),
+                torch.ones(1, 3, 45, device=device),
+            ),
+            dim=2,
+        ),
+        init_pc=torch.randn(1, 3, 4, 1, 2, 3, device=device),
+        utonia_features=torch.randn(1, 3, 2, 3, device=device),
+    )
+    (video[0].square().mean() + trajectories.square().mean()).backward()
+
+    assert model.wan_model.blocks[0].self_attn.q.weight.grad is not None
+    assert model.pc_model.blocks[0].norm1.linear.weight.grad is not None
