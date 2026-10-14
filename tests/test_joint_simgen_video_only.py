@@ -102,6 +102,7 @@ def test_video_only_losses_feed_three_synthetic_slots_and_return_video_loss(monk
     assert model.kwargs["noisy_future_state"].shape == (1, 3, 45, 1, 5, 3)
     assert model.kwargs["utonia_features"].shape == (1, 3, 5, 7)
     assert model.kwargs["frame_times"].shape == (1, 3, 49)
+    assert model.kwargs["return_pc_output"] is False
 
 
 def test_video_only_sampler_holds_one_three_slot_conditioning_draw(monkeypatch):

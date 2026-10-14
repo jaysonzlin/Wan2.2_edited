@@ -97,6 +97,7 @@ def _video_only_losses(
         frame_times=conditioning.frame_times,
         init_pc=conditioning.init_pc,
         utonia_features=conditioning.utonia_features,
+        return_pc_output=False,
     )
     return (
         masked_velocity_mse(torch.stack(video_prediction), flow.velocity_target, flow.loss_mask),

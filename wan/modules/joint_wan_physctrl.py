@@ -197,8 +197,9 @@ class JointWanPhysCtrlModel(nn.Module):
         initial_angular_velocity: torch.Tensor | None = None,
         utonia_features: torch.Tensor | None = None,
         video_condition: list[torch.Tensor] | None = None,
-    ) -> tuple[list[torch.Tensor], torch.Tensor]:
-        """Return Wan velocities and DDPM x0 predictions for every object in the clip."""
+        return_pc_output: bool = True,
+    ) -> tuple[list[torch.Tensor], torch.Tensor | None]:
+        """Return Wan velocities and, when requested, DDPM x0 PC predictions."""
         if len(video_x) != 1 or noisy_future_state.shape[0] != 1:
             raise ValueError("JointWanPhysCtrlModel currently requires train_batch_size=1")
         if noisy_future_state.ndim != 6:
@@ -242,15 +243,15 @@ class JointWanPhysCtrlModel(nn.Module):
                 modulation, wan_kwargs, batch_size, object_count,
             )
             if self.training and getattr(self.wan_model, "gradient_checkpointing", False):
-                # DDP's autograd traversal can make non-reentrant checkpointing stop
-                # midway through this multi-output block. Recompute the entire block
-                # so its saved tensors match the original forward pass.
-                with torch.utils.checkpoint.set_checkpoint_early_stop(False):
-                    hidden, point_states, controls = torch.utils.checkpoint.checkpoint(
-                        run_block, hidden, point_states, controls, use_reentrant=False
-                    )
+                hidden, point_states, controls = torch.utils.checkpoint.checkpoint(
+                    run_block, hidden, point_states, controls, use_reentrant=False
+                )
             else:
                 hidden, point_states, controls = run_block(hidden, point_states, controls)
         video_output = self.wan_model.unpatchify(self.wan_model.head(hidden, timestep_embedding), wan_kwargs["grid_sizes"])
-        pc_output = self.pc_model.decode_states(point_states, pc_temb, flat(init_pc)).unflatten(0, (batch_size, object_count))
+        pc_output = None
+        if return_pc_output:
+            pc_output = self.pc_model.decode_states(
+                point_states, pc_temb, flat(init_pc)
+            ).unflatten(0, (batch_size, object_count))
         return [item.float() for item in video_output], pc_output
