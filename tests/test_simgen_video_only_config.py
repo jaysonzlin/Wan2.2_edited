@@ -90,6 +90,17 @@ def test_video_only_config_accepts_the_h200_eight_hour_lineage_pair():
     validate_simgen_video_only_config(config)
 
 
+def test_video_only_config_accepts_the_five_thousand_step_h200_run():
+    config = _config()
+    config["training"]["max_train_steps"] = 5000
+    config["logging"].update(
+        output_dir="outputs/joint_simgen_video_only_3slot_h200_8h",
+        run_name="joint-simgen-video-only-3slot-h200-8h",
+    )
+
+    validate_simgen_video_only_config(config)
+
+
 def test_video_only_config_rejects_an_unapproved_lineage_pair():
     config = _config()
     config["logging"].update(

@@ -41,7 +41,7 @@ fi
 cd "${PROJECT_DIR}"
 mkdir -p "logs/nccl-joint-simgen-video-only-3slot-h200-8h-${SLURM_JOB_ID}"
 VIDEO_ONLY_CONFIG="configs/train/joint_simgen_480_8gpu_video_only_3slot.yaml"
-VIDEO_ONLY_OVERRIDES="logging.output_dir=outputs/joint_simgen_video_only_3slot_h200_8h logging.run_name=joint-simgen-video-only-3slot-h200-8h data.train_start=0 data.train_end=127 data.validation_start=490 data.validation_end=499 validation.every_steps=1000 visualization.every_steps=1000 training.resume_from_checkpoint=latest"
+VIDEO_ONLY_OVERRIDES="logging.output_dir=outputs/joint_simgen_video_only_3slot_h200_8h logging.run_name=joint-simgen-video-only-3slot-h200-8h data.train_start=0 data.train_end=127 data.validation_start=490 data.validation_end=499 training.max_train_steps=5000 validation.every_steps=1000 visualization.every_steps=1000 training.resume_from_checkpoint=latest"
 read -r -a video_only_overrides <<< "${VIDEO_ONLY_OVERRIDES}"
 "${PYTHON_BIN}" -c '
 import sys
@@ -96,4 +96,18 @@ srun --cpu-bind=cores --nodes=2 --ntasks=2 --ntasks-per-node=1 \
             joint_simgen_video_only.py \
             --config "${VIDEO_ONLY_CONFIG}" \
             "${video_only_overrides[@]}"
+    '
+
+CHECKPOINT_PATH="${PROJECT_DIR}/outputs/joint_simgen_video_only_3slot_h200_8h/checkpoint-5000"
+VALIDATION_OUTPUT_DIR="${CHECKPOINT_PATH}-validation"
+export CHECKPOINT_PATH VALIDATION_OUTPUT_DIR
+echo "Rendering validation split from: ${CHECKPOINT_PATH}"
+srun --cpu-bind=cores --nodes=1 --ntasks=1 --ntasks-per-node=1 --gpus-per-task=1 \
+    --export=ALL,PROJECT_DIR="${PROJECT_DIR}",MAMBA_ENV_PREFIX="${MAMBA_ENV_PREFIX}",CHECKPOINT_PATH="${CHECKPOINT_PATH}",VALIDATION_OUTPUT_DIR="${VALIDATION_OUTPUT_DIR}" \
+    bash -lc '
+        set -euo pipefail
+        exec "${MAMBA_ENV_PREFIX}/bin/python" visualize_joint_simgen_video_only_validation.py \
+            --checkpoint "${CHECKPOINT_PATH}" \
+            --output-dir "${VALIDATION_OUTPUT_DIR}" \
+            --overwrite
     '

@@ -12,6 +12,7 @@ from joint_simgen import (
     _encode_simgen_videos,
     _save_simgen_target_video,
     _shared_generator,
+    validation_video_paths,
 )
 from train_joint_wan_physctrl import (
     _bridge_gradient_norm,
@@ -169,6 +170,103 @@ def _save_sample_zero_visualization(model, vae, text_encoder, batch, output_dir,
     destination = Path(output_dir) / "visualizations" / f"step_{step:07d}"
     save_visualization(vae, sample.video_latent, destination / "video.mp4", config["visualization"]["fps"])
     _save_simgen_target_video(videos[0], destination / "target.mp4", config["visualization"]["fps"])
+
+
+@torch.inference_mode()
+def visualize_validation(
+    config: dict, checkpoint_path: str | Path, output_dir: str | Path
+) -> None:
+    """Render every video-only validation sample from one training checkpoint."""
+    from diffusers import DDIMScheduler
+    from safetensors.torch import load_file
+
+    from train_i2v_832x480 import save_visualization
+    from wan.configs.wan_ti2v_5B import ti2v_5B
+    from wan.joint_pc_pipeline import JointWanPhysCtrlPipeline
+    from wan.modules.joint_wan_physctrl import JointWanPhysCtrlModel
+    from wan.modules.pc_trajectory import PCTrajectoryModel
+    from wan.utils.fm_solvers_unipc import FlowUniPCMultistepScheduler
+
+    if not torch.cuda.is_available():
+        raise RuntimeError("validation visualization requires a CUDA GPU")
+    checkpoint = Path(checkpoint_path)
+    state_path = checkpoint / "model.safetensors"
+    if not state_path.is_file():
+        raise FileNotFoundError(f"checkpoint is missing model.safetensors: {checkpoint}")
+
+    data, training, objective = (
+        config["data"],
+        config["training"],
+        config["objective"],
+    )
+    validation_dataset = SimGenVideoDataset(
+        data["dataset_root"],
+        list(range(data["validation_start"], data["validation_end"] + 1)),
+    )
+    device = torch.device("cuda")
+    vae, text_encoder = load_frozen_encoders(
+        config["model"]["checkpoint_dir"], ti2v_5B, device
+    )
+    model = JointWanPhysCtrlModel(
+        load_trainable_dit(
+            config["model"]["checkpoint_dir"], config["model"]["gradient_checkpointing"]
+        ),
+        PCTrajectoryModel(
+            n_points=data["num_points"], n_future_frames=45, latent_dim=256,
+            n_layers=8, num_heads=4, objective_type="ddpm", conditioning="history",
+            history_frames=HISTORY_FRAMES,
+            utonia_feature_dim=config["model"]["utonia_feature_dim"],
+        ),
+    ).to(device)
+    state = load_file(str(state_path), device=str(device))
+    model.load_state_dict(state, strict=True)
+    del state
+    model.eval()
+    pipeline = JointWanPhysCtrlPipeline(
+        model,
+        FlowUniPCMultistepScheduler(
+            num_train_timesteps=objective["num_train_timesteps"],
+            prediction_type="flow_prediction", shift=1, use_dynamic_shifting=False,
+        ),
+        DDIMScheduler(
+            num_train_timesteps=objective["num_train_timesteps"],
+            beta_schedule=objective["beta_schedule"], prediction_type="sample",
+            clip_sample=False,
+        ),
+        time_shift=objective["time_shift"],
+    )
+    destination = Path(output_dir)
+    for index, validation_sample in enumerate(validation_dataset):
+        batch = simgen_video_collate([validation_sample])
+        videos = batch["video"].to(device, non_blocking=True)
+        clean_latents = _encode_simgen_videos(vae, videos)
+        with torch.autocast(device_type=device.type, dtype=torch.bfloat16):
+            sample = _sample_video_only(
+                pipeline=pipeline,
+                condition_latent=clean_latents[0, :, :HISTORY_FRAMES],
+                video_shape=tuple(clean_latents.shape[1:]),
+                context=text_encoder([""], device),
+                point_count=data["num_points"],
+                utonia_feature_dim=config["model"]["utonia_feature_dim"],
+                device=device,
+                dtype=clean_latents.dtype,
+                generator=_shared_generator(device, training["seed"]),
+                num_inference_steps=config["sampling"]["num_inference_steps"],
+            )
+        prediction_path, target_path = validation_video_paths(
+            destination, str(batch["sample_id"])
+        )
+        save_visualization(
+            vae, sample.video_latent, prediction_path, config["visualization"]["fps"]
+        )
+        _save_simgen_target_video(
+            videos[0], target_path, config["visualization"]["fps"]
+        )
+        print(
+            f"Rendered validation sample {index + 1}/{len(validation_dataset)}: "
+            f"{prediction_path}",
+            flush=True,
+        )
 
 
 def run_training(config: dict) -> None:

@@ -68,8 +68,8 @@ def validate_simgen_video_only_config(config: dict) -> None:
         raise ValueError(
             "training.resume_from_checkpoint must be null or latest for the isolated run"
         )
-    if training.get("max_train_steps") != 100000:
-        raise ValueError("training.max_train_steps must be 100000")
+    if training.get("max_train_steps") not in (5000, 100000):
+        raise ValueError("training.max_train_steps must be 5000 or 100000")
     if training.get("checkpoint_every_steps") != 1000:
         raise ValueError("training.checkpoint_every_steps must be 1000")
     if config.get("validation", {}).get("every_steps") != 1000:
