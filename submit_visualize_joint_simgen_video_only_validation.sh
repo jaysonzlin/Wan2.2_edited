@@ -2,7 +2,7 @@
 #SBATCH --mail-user=jlin3@college.harvard.edu
 #SBATCH --mail-type=BEGIN,END,FAIL
 #SBATCH --job-name=joint_simgen_video_only_validation
-#SBATCH --partition=gpu_requeue
+#SBATCH --partition=gpu_h200
 #SBATCH --constraint=h200&holyndr
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
