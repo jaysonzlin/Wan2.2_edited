@@ -260,11 +260,15 @@ def load_joint_checkpoint_with_fallback(
 
 def prune_joint_checkpoints(root: str | Path, limit: int) -> None:
     """Keep the newest ``limit`` numeric joint-training checkpoint directories."""
-    checkpoints = sorted(
-        (path for path in Path(root).glob("checkpoint-*") if path.is_dir()),
-        key=lambda path: int(path.name.removeprefix("checkpoint-")),
-    )
-    for checkpoint in checkpoints[:-limit]:
+    checkpoints = []
+    for path in Path(root).glob("checkpoint-*"):
+        if not path.is_dir():
+            continue
+        suffix = path.name.removeprefix("checkpoint-")
+        if suffix.isdecimal():
+            checkpoints.append((int(suffix), path))
+    checkpoints.sort(key=lambda item: item[0])
+    for _, checkpoint in checkpoints[:-limit]:
         shutil.rmtree(checkpoint)
 
 

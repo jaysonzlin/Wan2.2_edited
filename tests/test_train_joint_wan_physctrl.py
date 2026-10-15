@@ -340,3 +340,15 @@ def test_joint_checkpoint_pruning_keeps_the_newest_two(tmp_path):
         "checkpoint-100",
         "checkpoint-150",
     }
+
+
+def test_joint_checkpoint_pruning_ignores_noncanonical_checkpoint_directories(tmp_path):
+    for name in ("checkpoint-100", "checkpoint-200", "checkpoint-2000 copy"):
+        (tmp_path / name).mkdir()
+
+    prune_joint_checkpoints(tmp_path, limit=1)
+
+    assert {path.name for path in tmp_path.iterdir()} == {
+        "checkpoint-200",
+        "checkpoint-2000 copy",
+    }
