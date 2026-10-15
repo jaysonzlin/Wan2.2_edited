@@ -4,6 +4,7 @@
 #SBATCH --job-name=joint_simgen_video_only_validation
 #SBATCH --partition=gpu_h200
 #SBATCH --constraint=h200&holyndr
+#SBATCH --exclude=holygpu8a12204,holygpu8a18103,holygpu8a16503
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
 #SBATCH --gres=gpu:nvidia_h200:1

@@ -13,8 +13,10 @@ def _write_executable(path: Path, contents: str) -> None:
 
 def test_video_only_validation_launcher_uses_default_checkpoint_and_output(tmp_path):
     script = PROJECT_DIR / "submit_visualize_joint_simgen_video_only_validation.sh"
-    assert "#SBATCH --partition=gpu_h200" in script.read_text()
-    assert "#SBATCH --requeue" not in script.read_text()
+    source = script.read_text()
+    assert "#SBATCH --partition=gpu_h200" in source
+    assert "#SBATCH --requeue" not in source
+    assert "#SBATCH --exclude=holygpu8a12204,holygpu8a18103,holygpu8a16503" in source
     checkpoint = (
         tmp_path
         / "outputs/joint_simgen_video_only_3slot_h200_8h/checkpoint-5000"
