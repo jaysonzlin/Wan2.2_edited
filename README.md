@@ -127,6 +127,17 @@ CHECKPOINT_PATH=/n/lab_storage/ydu_lab/jaysonzlin/Wan2.2_edited/outputs/joint_si
 Set `OUTPUT_DIR=/path/to/output` to choose a destination. The Python renderer
 refuses a populated destination unless passed `--overwrite` directly.
 
+To render the video-only model, submit the separate one-GPU H200 job. It
+defaults to the H200 run's 5,000-step checkpoint and replaces its prediction
+and target videos on reruns:
+
+```sh
+sbatch submit_visualize_joint_simgen_video_only_validation.sh
+```
+
+Set `CHECKPOINT_PATH=/path/to/checkpoint` to render another video-only
+checkpoint, and optionally set `OUTPUT_DIR=/path/to/output`.
+
 ### SimGen PC pretraining
 
 Pretrain only the history-conditioned point-cloud branch on the exact native

@@ -179,10 +179,7 @@ def test_h200_eight_hour_launcher_uses_separate_output_lineage(tmp_path):
     assert "logging.output_dir=outputs/joint_simgen_video_only_3slot_h200_8h" in calls
     assert "logging.run_name=joint-simgen-video-only-3slot-h200-8h" in calls
     assert "training.max_train_steps=5000" in calls
-    assert "visualize_joint_simgen_video_only_validation.py" in calls
-    assert "--checkpoint /" in calls
-    assert "checkpoint-5000" in calls
-    assert "--overwrite" in calls
+    assert "visualize_joint_simgen_video_only_validation.py" not in calls
     preflight_calls = [
         line for line in calls.splitlines() if "load_simgen_video_only_config" in line
     ]

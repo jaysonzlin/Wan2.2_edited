@@ -97,17 +97,3 @@ srun --cpu-bind=cores --nodes=2 --ntasks=2 --ntasks-per-node=1 \
             --config "${VIDEO_ONLY_CONFIG}" \
             "${video_only_overrides[@]}"
     '
-
-CHECKPOINT_PATH="${PROJECT_DIR}/outputs/joint_simgen_video_only_3slot_h200_8h/checkpoint-5000"
-VALIDATION_OUTPUT_DIR="${CHECKPOINT_PATH}-validation"
-export CHECKPOINT_PATH VALIDATION_OUTPUT_DIR
-echo "Rendering validation split from: ${CHECKPOINT_PATH}"
-srun --cpu-bind=cores --nodes=1 --ntasks=1 --ntasks-per-node=1 --gpus-per-task=1 \
-    --export=ALL,PROJECT_DIR="${PROJECT_DIR}",MAMBA_ENV_PREFIX="${MAMBA_ENV_PREFIX}",CHECKPOINT_PATH="${CHECKPOINT_PATH}",VALIDATION_OUTPUT_DIR="${VALIDATION_OUTPUT_DIR}" \
-    bash -lc '
-        set -euo pipefail
-        exec "${MAMBA_ENV_PREFIX}/bin/python" visualize_joint_simgen_video_only_validation.py \
-            --checkpoint "${CHECKPOINT_PATH}" \
-            --output-dir "${VALIDATION_OUTPUT_DIR}" \
-            --overwrite
-    '
