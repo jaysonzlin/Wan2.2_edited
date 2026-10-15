@@ -1,6 +1,7 @@
 import torch
 
 from training.simgen_video_only_conditioning import (
+    GeneratorStateBundle,
     make_video_only_generators,
     make_sampling_conditioning,
     make_training_conditioning,
@@ -76,3 +77,18 @@ def test_video_rng_stream_is_unaffected_by_synthetic_pc_rng_consumption():
         torch.randn(20, generator=video_first),
         torch.randn(20, generator=video_second),
     )
+
+
+def test_generator_state_bundle_restores_the_training_rng_streams():
+    video, pc = make_video_only_generators("cpu", 42)
+    state = GeneratorStateBundle(video=video, pc=pc)
+    checkpoint = state.state_dict()
+    expected_video = torch.randn(5, generator=video)
+    expected_pc = torch.randn(5, generator=pc)
+
+    torch.randn(11, generator=video)
+    torch.randn(11, generator=pc)
+    state.load_state_dict(checkpoint)
+
+    assert torch.equal(torch.randn(5, generator=video), expected_video)
+    assert torch.equal(torch.randn(5, generator=pc), expected_pc)

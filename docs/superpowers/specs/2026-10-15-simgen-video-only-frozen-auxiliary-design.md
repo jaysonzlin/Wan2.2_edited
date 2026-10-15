@@ -16,7 +16,9 @@ frames, three synthetic PC slots, empty text context, and video flow loss on
 the 45 future video-latent frames.
 
 It does not load pretrained PC weights, read real point clouds, train or render
-PC trajectories, or resume any prior video-only run.
+PC trajectories, or resume any prior video-only run with a different
+frozen-auxiliary lineage. The isolated run may resume its own latest complete
+checkpoint.
 
 ## Model and optimizer contract
 
@@ -65,7 +67,7 @@ pin its four history frames after every solver update.
 
 Use a new config, output directory, and W&B run name so `latest` cannot load a
 checkpoint from a run where PC or bridge weights were trainable. Set
-`resume_from_checkpoint: null`, `max_train_steps: 4000`, checkpoint every
+`resume_from_checkpoint: latest`, `max_train_steps: 4000`, checkpoint every
 1,000 steps, and retain the existing optimizer/objective values unless the
 frozen contract requires a Wan-only optimizer construction.
 
@@ -84,7 +86,7 @@ Tests must prove:
 - frozen-auxiliary sampling holds PC conditions/state fixed and does not call
   the PC scheduler or decoder;
 - sampling continues to pin video history;
-- the new config/launchers have isolated identity, no resume, a 4,000-step
+- the new config/launchers have isolated identity, same-lineage latest resume, a 4,000-step
   schedule, and the requested visualization cadence.
 
 Run the focused Python tests and shell syntax checks before submitting any

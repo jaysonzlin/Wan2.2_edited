@@ -23,6 +23,7 @@ from train_joint_wan_physctrl import (
     video_gradient_norm,
 )
 from training.simgen_video_only_conditioning import (
+    GeneratorStateBundle,
     HISTORY_FRAMES,
     make_video_only_generators,
     make_sampling_conditioning,
@@ -395,16 +396,17 @@ def run_training(config: dict) -> None:
     )
     if frozen_auxiliary:
         assert_frozen_pc_and_bridges(accelerator.unwrap_model(model))
-    resume_path = load_joint_checkpoint_with_fallback(
-        accelerator, output_dir, training.get("resume_from_checkpoint")
-    )
-    set_seed(training["seed"], device_specific=False)
     video_generator, pc_generator = make_video_only_generators(
         accelerator.device, training["seed"]
     )
-    validation_video_generator, validation_pc_generator = make_video_only_generators(
-        accelerator.device, training["seed"]
+    accelerator.register_for_checkpointing(
+        GeneratorStateBundle(video=video_generator, pc=pc_generator)
     )
+    resume_path = load_joint_checkpoint_with_fallback(
+        accelerator, output_dir, training.get("resume_from_checkpoint")
+    )
+    if resume_path is None:
+        set_seed(training["seed"], device_specific=False)
     global_step = int(resume_path.name.removeprefix("checkpoint-")) if resume_path else 0
     progress = create_progress_bar(training["max_train_steps"], global_step, accelerator.is_main_process)
     while global_step < training["max_train_steps"]:
@@ -451,6 +453,9 @@ def run_training(config: dict) -> None:
                     unwrapped = accelerator.unwrap_model(model)
                     was_training = unwrapped.training
                     unwrapped.eval()
+                    validation_video_generator, validation_pc_generator = (
+                        make_video_only_generators(accelerator.device, training["seed"])
+                    )
                     losses = []
                     with torch.no_grad():
                         for validation_batch in validation_loader:

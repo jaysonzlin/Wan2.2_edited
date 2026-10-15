@@ -23,6 +23,30 @@ class SyntheticPCConditioning:
     frame_times: torch.Tensor
 
 
+class GeneratorStateBundle:
+    """Make named ``torch.Generator`` states checkpointable by Accelerate."""
+
+    def __init__(self, **generators: torch.Generator) -> None:
+        if not generators or any(
+            not isinstance(generator, torch.Generator)
+            for generator in generators.values()
+        ):
+            raise ValueError("GeneratorStateBundle requires named torch.Generator instances")
+        self._generators = generators
+
+    def state_dict(self) -> dict[str, torch.Tensor]:
+        return {
+            name: generator.get_state().clone()
+            for name, generator in self._generators.items()
+        }
+
+    def load_state_dict(self, state: dict[str, torch.Tensor]) -> None:
+        if set(state) != set(self._generators):
+            raise ValueError("generator checkpoint names do not match this run")
+        for name, generator in self._generators.items():
+            generator.set_state(state[name])
+
+
 def make_video_only_generators(
     device: torch.device | str, seed: int
 ) -> tuple[torch.Generator, torch.Generator]:

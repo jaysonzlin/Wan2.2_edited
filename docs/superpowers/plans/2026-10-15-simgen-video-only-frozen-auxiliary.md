@@ -17,7 +17,7 @@
 - Freeze every PC and bridge parameter before optimizer construction; optimize Wan only.
 - Root all deterministic video and PC randomness in `training.seed: 42`, but use independent streams.
 - In frozen-auxiliary sampling, retain one synthetic PC history/features/future state for all 50 video steps and do not call the PC decoder or PC scheduler.
-- Use a new output lineage, `resume_from_checkpoint: null`, 4,000 steps, checkpoints every 1,000 steps, and sample-0 renders every 1,000 steps.
+- Use a new output lineage, `resume_from_checkpoint: latest`, 4,000 steps, checkpoints every 1,000 steps, and sample-0 renders every 1,000 steps. Checkpoint the independent training RNG streams so a same-lineage resume continues them.
 - Render `sample_490`–`sample_499` in a separate one-GPU job from `checkpoint-4000`.
 
 ## Review Focus
@@ -43,7 +43,7 @@
 
 - [ ] **Step 1: Write the failing config tests**
 
-Assert the new YAML has isolated output/run identity, 4,000 steps, null resume, 1,000-step checkpoint/validation/visualization cadence, and both frozen-mode flags. Assert frozen mode with `resume_from_checkpoint: latest` raises `ValueError`.
+Assert the new YAML has isolated output/run identity, 4,000 steps, latest resume, 1,000-step checkpoint/validation/visualization cadence, and both frozen-mode flags. Assert frozen mode accepts `resume_from_checkpoint: latest` but rejects external paths.
 
 - [ ] **Step 2: Run the test to verify it fails**
 
@@ -53,7 +53,7 @@ Expected: FAIL because the new config and frozen-mode validation do not exist.
 
 - [ ] **Step 3: Implement the config contract**
 
-Copy the three-slot YAML, change only experiment identity/schedule fields, and update `validate_simgen_video_only_config(config: dict) -> None` to require the frozen booleans together, null resume, and 4,000 steps for that exact lineage without changing existing lineages.
+Copy the three-slot YAML, change only experiment identity/schedule fields, and update `validate_simgen_video_only_config(config: dict) -> None` to require the frozen booleans together, same-lineage latest resume, and 4,000 steps for that exact lineage without changing existing lineages.
 
 - [ ] **Step 4: Run the test to verify it passes**
 
@@ -207,7 +207,7 @@ Expected: FAIL until frozen fields reach the sampling call.
 
 - [ ] **Step 3: Complete missing propagation and metrics wiring**
 
-Ensure periodic sample-0 visualization and standalone validation use the config-controlled split-RNG/fixed-PC path. Ensure logs expose zero auxiliary gradient norms and Wan-only learning rate.
+Ensure periodic sample-0 visualization and standalone validation use the config-controlled split-RNG/fixed-PC path. Ensure checkpoints restore the independent training RNG streams, while scalar validation uses a newly seeded deterministic stream. Ensure logs expose zero auxiliary gradient norms and Wan-only learning rate.
 
 - [ ] **Step 4: Run the focused verification suite**
 
@@ -226,5 +226,5 @@ git commit -m "test: verify frozen-auxiliary rendering contract"
 
 - Run `git diff --check`.
 - Run `bash -n` on both new launchers.
-- Confirm the saved run config records frozen flags and null resume before submission.
+- Confirm the saved run config records frozen flags and `resume_from_checkpoint: latest` before submission.
 - Do not submit a Slurm job automatically; hand off the scripts and commands for the user to launch.

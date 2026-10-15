@@ -72,9 +72,7 @@ def validate_simgen_video_only_config(config: dict) -> None:
         raise ValueError(
             "training.freeze_pc_and_bridges and sampling.freeze_auxiliary_pc_state must match"
         )
-    if frozen_auxiliary and training.get("resume_from_checkpoint") is not None:
-        raise ValueError("frozen-auxiliary video-only training must not resume")
-    if not frozen_auxiliary and training.get("resume_from_checkpoint") not in (None, "latest"):
+    if training.get("resume_from_checkpoint") not in (None, "latest"):
         raise ValueError(
             "training.resume_from_checkpoint must be null or latest for the isolated run"
         )

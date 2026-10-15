@@ -41,7 +41,7 @@ training:
   mixed_precision: bf16
   checkpoint_every_steps: 1000
   checkpoints_total_limit: 2
-  resume_from_checkpoint: null
+  resume_from_checkpoint: latest
   pretrained_pc_weights: null
   freeze_pc_and_bridges: true
 sampling:

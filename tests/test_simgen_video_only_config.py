@@ -112,7 +112,7 @@ def test_frozen_auxiliary_config_is_an_isolated_four_thousand_step_run():
 
     assert config["training"]["freeze_pc_and_bridges"] is True
     assert config["training"]["max_train_steps"] == 4000
-    assert config["training"]["resume_from_checkpoint"] is None
+    assert config["training"]["resume_from_checkpoint"] == "latest"
     assert config["sampling"]["freeze_auxiliary_pc_state"] is True
     assert config["training"]["checkpoint_every_steps"] == 1000
     assert config["validation"]["every_steps"] == 1000
@@ -125,7 +125,7 @@ def test_frozen_auxiliary_config_is_an_isolated_four_thousand_step_run():
     }
 
 
-def test_frozen_auxiliary_config_rejects_resume():
+def test_frozen_auxiliary_config_accepts_latest_resume():
     config = _config()
     config["training"].update(
         freeze_pc_and_bridges=True,
@@ -138,8 +138,7 @@ def test_frozen_auxiliary_config_rejects_resume():
         run_name="joint-simgen-video-only-3slot-frozen-auxiliary-h200-4k",
     )
 
-    with pytest.raises(ValueError, match="must not resume"):
-        validate_simgen_video_only_config(config)
+    validate_simgen_video_only_config(config)
 
 
 def test_video_only_config_rejects_an_unapproved_lineage_pair():
