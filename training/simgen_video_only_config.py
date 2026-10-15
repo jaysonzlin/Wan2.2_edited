@@ -64,11 +64,22 @@ def validate_simgen_video_only_config(config: dict) -> None:
         raise ValueError("optimizer must use the established joint AdamW groups")
     if training.get("pretrained_pc_weights") is not None:
         raise ValueError("training.pretrained_pc_weights must be null")
-    if training.get("resume_from_checkpoint") not in (None, "latest"):
+    frozen_auxiliary = training.get("freeze_pc_and_bridges", False)
+    freeze_auxiliary_pc_state = config.get("sampling", {}).get(
+        "freeze_auxiliary_pc_state", False
+    )
+    if frozen_auxiliary is not freeze_auxiliary_pc_state:
+        raise ValueError(
+            "training.freeze_pc_and_bridges and sampling.freeze_auxiliary_pc_state must match"
+        )
+    if frozen_auxiliary and training.get("resume_from_checkpoint") is not None:
+        raise ValueError("frozen-auxiliary video-only training must not resume")
+    if not frozen_auxiliary and training.get("resume_from_checkpoint") not in (None, "latest"):
         raise ValueError(
             "training.resume_from_checkpoint must be null or latest for the isolated run"
         )
-    if training.get("max_train_steps") not in (5000, 100000):
+    allowed_steps = (4000,) if frozen_auxiliary else (5000, 100000)
+    if training.get("max_train_steps") not in allowed_steps:
         raise ValueError("training.max_train_steps must be 5000 or 100000")
     if training.get("checkpoint_every_steps") != 1000:
         raise ValueError("training.checkpoint_every_steps must be 1000")
@@ -87,6 +98,10 @@ def validate_simgen_video_only_config(config: dict) -> None:
             "outputs/joint_simgen_video_only_3slot_h200_8h",
             "joint-simgen-video-only-3slot-h200-8h",
         ),
+        (
+            "outputs/joint_simgen_video_only_3slot_frozen_auxiliary_h200_4k",
+            "joint-simgen-video-only-3slot-frozen-auxiliary-h200-4k",
+        ),
     }
     if output_dir not in {pair[0] for pair in approved_lineage_pairs}:
         raise ValueError("logging.output_dir must use the isolated video-only lineage")
@@ -94,6 +109,12 @@ def validate_simgen_video_only_config(config: dict) -> None:
         raise ValueError("logging.run_name must use the isolated video-only lineage")
     if (output_dir, run_name) not in approved_lineage_pairs:
         raise ValueError("logging.output_dir and logging.run_name must use an approved lineage pair")
+    frozen_pair = (
+        "outputs/joint_simgen_video_only_3slot_frozen_auxiliary_h200_4k",
+        "joint-simgen-video-only-3slot-frozen-auxiliary-h200-4k",
+    )
+    if ((output_dir, run_name) == frozen_pair) is not frozen_auxiliary:
+        raise ValueError("frozen-auxiliary lineage must match frozen configuration")
 
 
 def load_simgen_video_only_config(path: str | Path, overrides: list[str]) -> dict:

@@ -1,4 +1,5 @@
 from copy import deepcopy
+from pathlib import Path
 
 import pytest
 import yaml
@@ -99,6 +100,46 @@ def test_video_only_config_accepts_the_five_thousand_step_h200_run():
     )
 
     validate_simgen_video_only_config(config)
+
+
+def test_frozen_auxiliary_config_is_an_isolated_four_thousand_step_run():
+    config_path = (
+        Path(__file__).resolve().parents[1]
+        / "configs/train/joint_simgen_480_8gpu_video_only_3slot_frozen_auxiliary.yaml"
+    )
+
+    config = load_simgen_video_only_config(config_path, [])
+
+    assert config["training"]["freeze_pc_and_bridges"] is True
+    assert config["training"]["max_train_steps"] == 4000
+    assert config["training"]["resume_from_checkpoint"] is None
+    assert config["sampling"]["freeze_auxiliary_pc_state"] is True
+    assert config["training"]["checkpoint_every_steps"] == 1000
+    assert config["validation"]["every_steps"] == 1000
+    assert config["visualization"]["every_steps"] == 1000
+    assert config["logging"] == {
+        "output_dir": "outputs/joint_simgen_video_only_3slot_frozen_auxiliary_h200_4k",
+        "report_to": "wandb",
+        "project": "joint-simgen",
+        "run_name": "joint-simgen-video-only-3slot-frozen-auxiliary-h200-4k",
+    }
+
+
+def test_frozen_auxiliary_config_rejects_resume():
+    config = _config()
+    config["training"].update(
+        freeze_pc_and_bridges=True,
+        max_train_steps=4000,
+        resume_from_checkpoint="latest",
+    )
+    config["sampling"]["freeze_auxiliary_pc_state"] = True
+    config["logging"].update(
+        output_dir="outputs/joint_simgen_video_only_3slot_frozen_auxiliary_h200_4k",
+        run_name="joint-simgen-video-only-3slot-frozen-auxiliary-h200-4k",
+    )
+
+    with pytest.raises(ValueError, match="must not resume"):
+        validate_simgen_video_only_config(config)
 
 
 def test_video_only_config_rejects_an_unapproved_lineage_pair():
