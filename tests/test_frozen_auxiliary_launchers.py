@@ -13,6 +13,7 @@ def test_frozen_auxiliary_training_launcher_uses_the_isolated_4000_step_config()
     assert "joint_simgen_video_only.py" in script
     assert "training.resume_from_checkpoint" not in script
     assert "training.max_train_steps=" not in script
+    assert "Refusing to reuse frozen-auxiliary output directory" in script
 
 
 def test_frozen_auxiliary_validation_launcher_targets_checkpoint_4000():

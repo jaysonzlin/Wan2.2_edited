@@ -41,6 +41,12 @@ if [[ ! -f "${PROJECT_DIR}/configs/accelerate/h200_8gpu_2node.yaml" ]]; then
 fi
 
 cd "${PROJECT_DIR}"
+FROZEN_OUTPUT_DIR="outputs/joint_simgen_video_only_3slot_frozen_auxiliary_h200_4k"
+if [[ -e "${FROZEN_OUTPUT_DIR}" ]]; then
+    echo "Refusing to reuse frozen-auxiliary output directory: ${FROZEN_OUTPUT_DIR}" >&2
+    echo "This launcher is intentionally a fresh, no-resume 4000-step run." >&2
+    exit 1
+fi
 mkdir -p "logs/nccl-joint-simgen-video-only-3slot-frozen-auxiliary-h200-4k-${SLURM_JOB_ID}"
 "${PYTHON_BIN}" -c '
 import sys
