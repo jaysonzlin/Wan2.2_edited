@@ -1,6 +1,7 @@
 import types
 import sys
 
+import pytest
 import torch
 from torch import nn
 
@@ -88,7 +89,7 @@ def test_video_only_losses_feed_three_synthetic_slots_and_return_video_loss(monk
         model,
         vae=object(),
         text_encoder=lambda prompts, device: [torch.zeros(1)],
-        generator=torch.Generator().manual_seed(5),
+        video_generator=torch.Generator().manual_seed(5),
         device="cpu",
         data={"num_points": 5, "synthetic_object_slots": 3},
         model_config={"utonia_feature_dim": 7},
@@ -128,7 +129,7 @@ def test_video_only_sampler_holds_one_three_slot_conditioning_draw(monkeypatch):
         utonia_feature_dim=7,
         device="cpu",
         dtype=torch.float32,
-        generator=torch.Generator().manual_seed(42),
+        video_generator=torch.Generator().manual_seed(42),
         num_inference_steps=50,
     )
 
@@ -176,7 +177,7 @@ def test_video_loss_can_train_wan_bridge_and_pc_optimizer_groups(monkeypatch):
         model,
         vae=object(),
         text_encoder=lambda prompts, device: [torch.zeros(1)],
-        generator=torch.Generator().manual_seed(5),
+        video_generator=torch.Generator().manual_seed(5),
         device="cpu",
         data={"num_points": 5, "synthetic_object_slots": 3},
         model_config={"utonia_feature_dim": 7},
@@ -198,8 +199,66 @@ def test_video_loss_can_train_wan_bridge_and_pc_optimizer_groups(monkeypatch):
     assert model.pc_model.weight.grad is not None
 
 
+def test_frozen_auxiliary_optimizer_contains_only_wan_and_auxiliary_has_no_gradients(monkeypatch):
+    clean_latents = torch.zeros(1, 2, 1, 2, 2)
+    flow = types.SimpleNamespace(
+        model_input=clean_latents,
+        latent_timesteps=torch.ones(1, 2),
+        velocity_target=torch.zeros_like(clean_latents),
+        loss_mask=torch.ones_like(clean_latents),
+    )
+    monkeypatch.setattr(joint_simgen_video_only, "_encode_simgen_videos", lambda *_: clean_latents)
+    monkeypatch.setattr(joint_simgen_video_only, "make_flow_matching_batch", lambda *_args, **_kwargs: flow)
+    monkeypatch.setattr(joint_simgen_video_only, "expand_latent_timesteps", lambda *args: args[0])
+    monkeypatch.setattr(joint_simgen_video_only, "masked_velocity_mse", lambda prediction, *_args: prediction.sum())
+
+    class ToyJointModel(nn.Module):
+        def __init__(self):
+            super().__init__()
+            self.wan_model = nn.Linear(1, 1, bias=False)
+            self.bridges = nn.Linear(1, 1, bias=False)
+            self.pc_model = nn.Linear(1, 1, bias=False)
+
+        def forward(self, *, video_x, **_kwargs):
+            offset = (self.wan_model.weight + self.bridges.weight + self.pc_model.weight).reshape(1, 1, 1, 1)
+            return [video_x[0] + offset], None
+
+    model = ToyJointModel()
+    joint_simgen_video_only.freeze_pc_and_bridges(model)
+    optimizer = joint_simgen_video_only.create_frozen_auxiliary_optimizer(
+        model,
+        {"video": {"lr": 1e-4, "betas": [0.9, 0.999], "eps": 1e-8, "weight_decay": 0.0}},
+    )
+    loss, _, _ = joint_simgen_video_only._video_only_losses(
+        {"video": torch.zeros(1, 2, 3, 4, 4)},
+        model,
+        vae=object(),
+        text_encoder=lambda prompts, device: [torch.zeros(1)],
+        video_generator=torch.Generator().manual_seed(5),
+        pc_generator=torch.Generator().manual_seed(6),
+        device="cpu",
+        data={"num_points": 5, "synthetic_object_slots": 3},
+        model_config={"utonia_feature_dim": 7},
+        objective={"time_shift": 5.0, "num_train_timesteps": 1000},
+    )
+    loss.backward()
+
+    assert [group["name"] for group in optimizer.param_groups] == ["video"]
+    assert {id(parameter) for parameter in optimizer.param_groups[0]["params"]} == {
+        id(parameter) for parameter in model.wan_model.parameters()
+    }
+    assert model.wan_model.weight.grad is not None
+    assert model.bridges.weight.grad is None
+    assert model.pc_model.weight.grad is None
+    joint_simgen_video_only.assert_frozen_pc_and_bridges_have_no_gradients(model)
+    model.pc_model.weight.grad = torch.ones_like(model.pc_model.weight)
+    with pytest.raises(RuntimeError, match="received gradients"):
+        joint_simgen_video_only.assert_frozen_pc_and_bridges_have_no_gradients(model)
+
+
 def test_sample_zero_visualization_writes_only_predicted_and_target_video(monkeypatch, tmp_path):
     writes = []
+    sampler_calls = []
     monkeypatch.setitem(sys.modules, "diffusers", types.SimpleNamespace(DDIMScheduler=lambda **_: object()))
     monkeypatch.setitem(
         sys.modules,
@@ -226,7 +285,8 @@ def test_sample_zero_visualization_writes_only_predicted_and_target_video(monkey
     monkeypatch.setattr(
         joint_simgen_video_only,
         "_sample_video_only",
-        lambda **_kwargs: types.SimpleNamespace(video_latent=torch.zeros(2, 5, 2, 2)),
+        lambda **kwargs: sampler_calls.append(kwargs)
+        or types.SimpleNamespace(video_latent=torch.zeros(2, 5, 2, 2)),
     )
     monkeypatch.setattr(
         joint_simgen_video_only,
@@ -238,7 +298,7 @@ def test_sample_zero_visualization_writes_only_predicted_and_target_video(monkey
         "training": {"seed": 42},
         "data": {"num_points": 5},
         "model": {"utonia_feature_dim": 7},
-        "sampling": {"num_inference_steps": 50},
+        "sampling": {"num_inference_steps": 50, "freeze_auxiliary_pc_state": True},
         "visualization": {"fps": 12},
     }
 
@@ -255,3 +315,4 @@ def test_sample_zero_visualization_writes_only_predicted_and_target_video(monkey
 
     destination = tmp_path / "visualizations" / "step_0001000"
     assert writes == [destination / "video.mp4", destination / "target.mp4"]
+    assert sampler_calls[0]["advance_pc_state"] is False

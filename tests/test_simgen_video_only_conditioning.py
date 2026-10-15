@@ -1,6 +1,7 @@
 import torch
 
 from training.simgen_video_only_conditioning import (
+    make_video_only_generators,
     make_sampling_conditioning,
     make_training_conditioning,
 )
@@ -63,3 +64,15 @@ def test_sampling_conditioning_returns_pipeline_ready_three_slot_noise():
 
     assert history.shape == (3, 4, 5, 3)
     assert features.shape == (3, 5, 7)
+
+
+def test_video_rng_stream_is_unaffected_by_synthetic_pc_rng_consumption():
+    video_first, pc_first = make_video_only_generators("cpu", 42)
+    video_second, _ = make_video_only_generators("cpu", 42)
+
+    torch.randn(100, generator=pc_first)
+
+    assert torch.equal(
+        torch.randn(20, generator=video_first),
+        torch.randn(20, generator=video_second),
+    )

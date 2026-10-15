@@ -11,7 +11,6 @@ from joint_simgen import (
     _create_training_accelerator,
     _encode_simgen_videos,
     _save_simgen_target_video,
-    _shared_generator,
     validation_video_paths,
 )
 from train_joint_wan_physctrl import (
@@ -25,6 +24,7 @@ from train_joint_wan_physctrl import (
 )
 from training.simgen_video_only_conditioning import (
     HISTORY_FRAMES,
+    make_video_only_generators,
     make_sampling_conditioning,
     make_training_conditioning,
 )
@@ -62,15 +62,60 @@ def _create_video_only_training_accelerator(training: dict, logging: dict):
     )
 
 
+def freeze_pc_and_bridges(model: torch.nn.Module) -> None:
+    """Leave the random auxiliary branch structurally present but immutable."""
+    model.pc_model.requires_grad_(False)
+    model.bridges.requires_grad_(False)
+
+
+def assert_frozen_pc_and_bridges(model: torch.nn.Module) -> None:
+    """Fail if auxiliary parameters can participate in optimization."""
+    if any(parameter.requires_grad for parameter in model.pc_model.parameters()):
+        raise RuntimeError("frozen video-only training requires pc_model to be frozen")
+    if any(parameter.requires_grad for parameter in model.bridges.parameters()):
+        raise RuntimeError("frozen video-only training requires bridges to be frozen")
+
+
+def assert_frozen_pc_and_bridges_have_no_gradients(model: torch.nn.Module) -> None:
+    """Fail fast when an immutable auxiliary parameter receives a gradient."""
+    unexpected = [
+        parameter
+        for module in (model.pc_model, model.bridges)
+        for parameter in module.parameters()
+        if parameter.grad is not None
+    ]
+    if unexpected:
+        raise RuntimeError("frozen PC or bridge parameters received gradients")
+
+
+def create_frozen_auxiliary_optimizer(model: torch.nn.Module, optimizer_config: dict):
+    """Create the Wan-only AdamW optimizer for the frozen-auxiliary ablation."""
+    assert_frozen_pc_and_bridges(model)
+    settings = optimizer_config["video"]
+    return torch.optim.AdamW(
+        [
+            {
+                "name": "video",
+                "params": model.wan_model.parameters(),
+                "lr": settings["lr"],
+                "betas": tuple(settings["betas"]),
+                "eps": settings["eps"],
+                "weight_decay": settings["weight_decay"],
+            }
+        ]
+    )
+
+
 def _video_only_losses(
-    batch, model, vae, text_encoder, generator, device, data, model_config, objective
+    batch, model, vae, text_encoder, video_generator, device, data, model_config, objective,
+    pc_generator=None,
 ) -> tuple[torch.Tensor, torch.Tensor, list[torch.Tensor]]:
     """Compute flow loss while retaining only synthetic PC-side inputs."""
     videos = batch["video"].to(device, non_blocking=True)
     clean_latents = _encode_simgen_videos(vae, videos)
     flow = make_flow_matching_batch(
         clean_latents,
-        generator,
+        video_generator,
         objective["time_shift"],
         objective["num_train_timesteps"],
         history_frames=HISTORY_FRAMES,
@@ -82,7 +127,7 @@ def _video_only_losses(
         num_train_timesteps=objective["num_train_timesteps"],
         device=device,
         dtype=clean_latents.dtype,
-        generator=generator,
+        generator=pc_generator if pc_generator is not None else video_generator,
     )
     context = text_encoder([""] * videos.shape[0], device)
     video_prediction, _ = model(
@@ -109,7 +154,8 @@ def _video_only_losses(
 
 def _sample_video_only(
     *, pipeline, condition_latent, video_shape, context, point_count,
-    utonia_feature_dim, device, dtype, generator, num_inference_steps
+    utonia_feature_dim, device, dtype, video_generator, num_inference_steps,
+    pc_generator=None, advance_pc_state=True,
 ):
     """Sample one video with noise conditioning fixed for the whole trajectory."""
     history, features = make_sampling_conditioning(
@@ -117,7 +163,7 @@ def _sample_video_only(
         utonia_feature_dim=utonia_feature_dim,
         device=device,
         dtype=dtype,
-        generator=generator,
+        generator=pc_generator if pc_generator is not None else video_generator,
     )
     return pipeline(
         condition_latent=condition_latent,
@@ -128,7 +174,9 @@ def _sample_video_only(
         initial_angular_velocities=None,
         utonia_features=features,
         num_inference_steps=num_inference_steps,
-        generator=generator,
+        generator=video_generator,
+        pc_generator=pc_generator,
+        advance_pc_state=advance_pc_state,
     )
 
 
@@ -154,7 +202,9 @@ def _save_sample_zero_visualization(model, vae, text_encoder, batch, output_dir,
         ),
         time_shift=objective["time_shift"],
     )
-    generator = torch.Generator(device=device).manual_seed(config["training"]["seed"])
+    video_generator, pc_generator = make_video_only_generators(
+        device, config["training"]["seed"]
+    )
     sample = _sample_video_only(
         pipeline=pipeline,
         condition_latent=clean_latents[0, :, :HISTORY_FRAMES],
@@ -164,8 +214,10 @@ def _save_sample_zero_visualization(model, vae, text_encoder, batch, output_dir,
         utonia_feature_dim=config["model"]["utonia_feature_dim"],
         device=device,
         dtype=clean_latents.dtype,
-        generator=generator,
+        video_generator=video_generator,
+        pc_generator=pc_generator,
         num_inference_steps=config["sampling"]["num_inference_steps"],
+        advance_pc_state=not config["sampling"].get("freeze_auxiliary_pc_state", False),
     )
     destination = Path(output_dir) / "visualizations" / f"step_{step:07d}"
     save_visualization(vae, sample.video_latent, destination / "video.mp4", config["visualization"]["fps"])
@@ -240,6 +292,9 @@ def visualize_validation(
         batch = simgen_video_collate([validation_sample])
         videos = batch["video"].to(device, non_blocking=True)
         clean_latents = _encode_simgen_videos(vae, videos)
+        video_generator, pc_generator = make_video_only_generators(
+            device, training["seed"]
+        )
         with torch.autocast(device_type=device.type, dtype=torch.bfloat16):
             sample = _sample_video_only(
                 pipeline=pipeline,
@@ -250,8 +305,10 @@ def visualize_validation(
                 utonia_feature_dim=config["model"]["utonia_feature_dim"],
                 device=device,
                 dtype=clean_latents.dtype,
-                generator=_shared_generator(device, training["seed"]),
+                video_generator=video_generator,
+                pc_generator=pc_generator,
                 num_inference_steps=config["sampling"]["num_inference_steps"],
+                advance_pc_state=not config["sampling"].get("freeze_auxiliary_pc_state", False),
             )
         prediction_path, target_path = validation_video_paths(
             destination, str(batch["sample_id"])
@@ -322,7 +379,12 @@ def run_training(config: dict) -> None:
             utonia_feature_dim=config["model"]["utonia_feature_dim"],
         ),
     )
-    optimizer = create_joint_optimizer(model, config["optimizer"])
+    frozen_auxiliary = training.get("freeze_pc_and_bridges", False)
+    if frozen_auxiliary:
+        freeze_pc_and_bridges(model)
+        optimizer = create_frozen_auxiliary_optimizer(model, config["optimizer"])
+    else:
+        optimizer = create_joint_optimizer(model, config["optimizer"])
     lr_scheduler = create_lr_scheduler(
         training["lr_scheduler"], optimizer, training["warmup_steps"], training["max_train_steps"],
         cosine_factory=get_cosine_schedule_with_warmup,
@@ -331,23 +393,31 @@ def run_training(config: dict) -> None:
     model, optimizer, train_loader, lr_scheduler = accelerator.prepare(
         model, optimizer, train_loader, lr_scheduler
     )
+    if frozen_auxiliary:
+        assert_frozen_pc_and_bridges(accelerator.unwrap_model(model))
     resume_path = load_joint_checkpoint_with_fallback(
         accelerator, output_dir, training.get("resume_from_checkpoint")
     )
     set_seed(training["seed"], device_specific=False)
-    generator = _shared_generator(accelerator.device, training["seed"])
-    validation_generator = _shared_generator(accelerator.device, training["seed"])
+    video_generator, pc_generator = make_video_only_generators(
+        accelerator.device, training["seed"]
+    )
+    validation_video_generator, validation_pc_generator = make_video_only_generators(
+        accelerator.device, training["seed"]
+    )
     global_step = int(resume_path.name.removeprefix("checkpoint-")) if resume_path else 0
     progress = create_progress_bar(training["max_train_steps"], global_step, accelerator.is_main_process)
     while global_step < training["max_train_steps"]:
         for batch in train_loader:
             with accelerator.accumulate(model):
                 loss, _, _ = _video_only_losses(
-                    batch, model, vae, text_encoder, generator, accelerator.device,
-                    data, config["model"], objective,
+                    batch, model, vae, text_encoder, video_generator, accelerator.device,
+                    data, config["model"], objective, pc_generator,
                 )
                 accelerator.backward(loss)
                 unwrapped = accelerator.unwrap_model(model)
+                if frozen_auxiliary:
+                    assert_frozen_pc_and_bridges_have_no_gradients(unwrapped)
                 bridge_norm = _bridge_gradient_norm(unwrapped)
                 wan_norm = video_gradient_norm(unwrapped)
                 pc_norm = pc_gradient_norm(unwrapped)
@@ -366,6 +436,7 @@ def run_training(config: dict) -> None:
                 "train/video_gradient_norm": accelerator.reduce(wan_norm.detach(), reduction="mean").item(),
                 "train/pc_gradient_norm": accelerator.reduce(pc_norm.detach(), reduction="mean").item(),
                 "train/learning_rate": lr_scheduler.get_last_lr()[0],
+                "train/frozen_auxiliary_modules": float(frozen_auxiliary),
             }
             if accelerator.is_main_process:
                 accelerator.log(metrics, step=global_step)
@@ -384,8 +455,8 @@ def run_training(config: dict) -> None:
                     with torch.no_grad():
                         for validation_batch in validation_loader:
                             validation_loss, _, _ = _video_only_losses(
-                                validation_batch, unwrapped, vae, text_encoder, validation_generator,
-                                accelerator.device, data, config["model"], objective,
+                                validation_batch, unwrapped, vae, text_encoder, validation_video_generator,
+                                accelerator.device, data, config["model"], objective, validation_pc_generator,
                             )
                             losses.append(validation_loss)
                     accelerator.log({"validation/video_loss": torch.stack(losses).mean().item(), "validation/loss": torch.stack(losses).mean().item()}, step=global_step)

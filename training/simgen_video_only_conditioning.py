@@ -10,6 +10,7 @@ import torch
 SYNTHETIC_OBJECT_SLOTS = 3
 HISTORY_FRAMES = 4
 FUTURE_FRAMES = 45
+PC_GENERATOR_SEED_OFFSET = 1
 
 
 @dataclass(frozen=True)
@@ -20,6 +21,18 @@ class SyntheticPCConditioning:
     noisy_future_state: torch.Tensor
     utonia_features: torch.Tensor
     frame_times: torch.Tensor
+
+
+def make_video_only_generators(
+    device: torch.device | str, seed: int
+) -> tuple[torch.Generator, torch.Generator]:
+    """Return independent, repeatable video and synthetic-PC RNG streams."""
+    if not isinstance(seed, int) or isinstance(seed, bool):
+        raise ValueError("seed must be an integer")
+    return (
+        torch.Generator(device=device).manual_seed(seed),
+        torch.Generator(device=device).manual_seed(seed + PC_GENERATOR_SEED_OFFSET),
+    )
 
 
 def _validate_dimensions(

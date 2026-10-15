@@ -42,8 +42,16 @@ class JointWanPhysCtrlPipeline:
         utonia_features: torch.Tensor | None = None,
         num_inference_steps: int = 50,
         generator: torch.Generator | None = None,
+        pc_generator: torch.Generator | None = None,
+        advance_pc_state: bool = True,
     ) -> JointSample:
-        """Jointly sample one I2V latent and K PC trajectories with equal outer-step counts."""
+        """Sample I2V and, optionally, advance the auxiliary PC DDIM trajectory.
+
+        ``advance_pc_state=False`` preserves one initial PC-noise state throughout
+        video sampling.  The retained PC encoder and bridge path receives the
+        current video timestep as its conditioning time, but PC scheduler setup,
+        decoding, and DDIM feedback are all disabled.
+        """
         if num_inference_steps <= 0:
             raise ValueError("num_inference_steps must be positive")
         history_frames = condition_latent.shape[1]
@@ -54,23 +62,31 @@ class JointWanPhysCtrlPipeline:
         device = condition_latent.device
         object_count, _, point_count, _ = initial_point_clouds.shape
         future_frame_count = self.model.pc_model.n_future_frames
+        pc_generator = generator if pc_generator is None else pc_generator
         video_state = torch.randn(video_shape, device=device, dtype=condition_latent.dtype, generator=generator)
         video_state[:, :history_frames] = condition_latent
         point_state = torch.randn(
             (1, object_count, future_frame_count, 1, point_count, 3),
             device=device,
             dtype=initial_point_clouds.dtype,
-            generator=generator,
+            generator=pc_generator,
         )
         init_pc = initial_point_clouds.unsqueeze(0).unsqueeze(3).to(device)
         linear = None if initial_linear_velocities is None else initial_linear_velocities.unsqueeze(0).to(device)
         angular = None if initial_angular_velocities is None else initial_angular_velocities.unsqueeze(0).to(device)
         features = None if utonia_features is None else utonia_features.unsqueeze(0).to(device)
         self.video_scheduler.set_timesteps(num_inference_steps, device=device, shift=self.time_shift)
-        self.pc_scheduler.set_timesteps(num_inference_steps, device=device)
-        if len(self.video_scheduler.timesteps) != len(self.pc_scheduler.timesteps):
-            raise ValueError("video and PC schedulers must expose the same number of timesteps")
-        for video_timestep, pc_timestep in zip(self.video_scheduler.timesteps, self.pc_scheduler.timesteps):
+        if advance_pc_state:
+            self.pc_scheduler.set_timesteps(num_inference_steps, device=device)
+            if len(self.video_scheduler.timesteps) != len(self.pc_scheduler.timesteps):
+                raise ValueError("video and PC schedulers must expose the same number of timesteps")
+            timestep_pairs = zip(self.video_scheduler.timesteps, self.pc_scheduler.timesteps)
+        else:
+            timestep_pairs = (
+                (video_timestep, video_timestep)
+                for video_timestep in self.video_scheduler.timesteps
+            )
+        for video_timestep, pc_timestep in timestep_pairs:
             video_frame_times = torch.full(
                 (1, video_shape[1]), video_timestep.item(), device=device, dtype=video_state.dtype
             )
@@ -95,6 +111,7 @@ class JointWanPhysCtrlPipeline:
                 initial_linear_velocity=linear,
                 initial_angular_velocity=angular,
                 utonia_features=features,
+                return_pc_output=advance_pc_state,
             )
             video_state = self._prev_sample(
                 self.video_scheduler.step(
@@ -106,9 +123,10 @@ class JointWanPhysCtrlPipeline:
                 )
             ).squeeze(0)
             video_state[:, :history_frames] = condition_latent
-            point_state = self._prev_sample(
-                self.pc_scheduler.step(
-                    pc_prediction, pc_timestep, point_state, return_dict=True, generator=generator
+            if advance_pc_state:
+                point_state = self._prev_sample(
+                    self.pc_scheduler.step(
+                        pc_prediction, pc_timestep, point_state, return_dict=True, generator=pc_generator
+                    )
                 )
-            )
         return JointSample(video_latent=video_state, future_point_clouds=point_state)

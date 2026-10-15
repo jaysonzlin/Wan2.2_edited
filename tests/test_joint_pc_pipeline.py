@@ -106,3 +106,32 @@ def test_joint_pipeline_supports_four_history_frames_and_utonia_features():
     assert result.future_point_clouds.shape == (1, 2, 45, 1, 3, 3)
     assert model.calls[0]["frame_times"][:, :, :4].eq(0).all()
     assert model.calls[0]["utonia_features"].shape == (1, 2, 3, 5)
+
+
+def test_joint_pipeline_can_hold_pc_state_fixed_without_ddim_feedback():
+    model = _JointModel(n_future_frames=45)
+    video_scheduler = _Scheduler([9, 5])
+    pc_scheduler = _Scheduler([999, 500])
+    pipeline = JointWanPhysCtrlPipeline(model, video_scheduler, pc_scheduler, time_shift=5.0)
+    result = pipeline(
+        condition_latent=torch.zeros((2, 4, 2, 2)),
+        video_shape=(2, 49, 2, 2),
+        context=[torch.zeros(1, 4)],
+        initial_point_clouds=torch.zeros((2, 4, 3, 3)),
+        initial_linear_velocities=None,
+        initial_angular_velocities=None,
+        num_inference_steps=2,
+        generator=torch.Generator().manual_seed(3),
+        pc_generator=torch.Generator().manual_seed(4),
+        advance_pc_state=False,
+    )
+
+    assert len(model.calls) == 2
+    assert pc_scheduler.set_calls == []
+    assert pc_scheduler.step_calls == []
+    assert all(call["return_pc_output"] is False for call in model.calls)
+    assert model.calls[0]["frame_times"][0, 0, 4:].eq(9).all()
+    assert torch.equal(
+        model.calls[0]["noisy_future_state"], model.calls[1]["noisy_future_state"]
+    )
+    assert torch.equal(result.future_point_clouds, model.calls[0]["noisy_future_state"])

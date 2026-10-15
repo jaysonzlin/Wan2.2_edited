@@ -80,7 +80,8 @@ def validate_simgen_video_only_config(config: dict) -> None:
         )
     allowed_steps = (4000,) if frozen_auxiliary else (5000, 100000)
     if training.get("max_train_steps") not in allowed_steps:
-        raise ValueError("training.max_train_steps must be 5000 or 100000")
+        expected_steps = " or ".join(str(step) for step in allowed_steps)
+        raise ValueError(f"training.max_train_steps must be {expected_steps}")
     if training.get("checkpoint_every_steps") != 1000:
         raise ValueError("training.checkpoint_every_steps must be 1000")
     if config.get("validation", {}).get("every_steps") != 1000:
