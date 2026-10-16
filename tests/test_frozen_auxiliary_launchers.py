@@ -26,3 +26,20 @@ def test_frozen_auxiliary_validation_launcher_targets_checkpoint_4000():
     assert "joint_simgen_video_only_3slot_frozen_auxiliary_h200_4k/checkpoint-4000" in script
     assert "visualize_joint_simgen_video_only_validation.py" in script
     assert "--overwrite" in script
+
+
+def test_one_gpu_frozen_auxiliary_diagnostic_launcher_runs_one_real_optimizer_step():
+    script = Path(
+        "submit_joint_simgen_video_only_1gpu_frozen_auxiliary_diagnostic.sh"
+    ).read_text()
+
+    assert "#SBATCH --nodes=1" in script
+    assert "#SBATCH --gres=gpu:nvidia_h200:1" in script
+    assert "#SBATCH --time=01:00:00" in script
+    assert "joint_simgen_video_only_1gpu_diagnostic.py" in script
+    assert (
+        "--config "
+        "configs/train/joint_simgen_480_8gpu_video_only_3slot_frozen_auxiliary.yaml"
+        in script
+    )
+    assert "--frozen-auxiliary" in script

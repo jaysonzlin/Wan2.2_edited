@@ -6,7 +6,19 @@ import torch
 from torch import nn
 
 import joint_simgen_video_only
+import joint_simgen_video_only_1gpu_diagnostic
 from train_joint_wan_physctrl import create_joint_optimizer
+
+
+def test_frozen_auxiliary_update_probe_requires_and_observes_a_nonzero_wan_gradient():
+    model = types.SimpleNamespace(wan_model=nn.Linear(1, 1, bias=False))
+    optimizer = torch.optim.AdamW(model.wan_model.parameters(), lr=0.1, weight_decay=0.0)
+    model.wan_model(torch.ones(1, 1)).sum().backward()
+
+    probe = joint_simgen_video_only_1gpu_diagnostic.capture_wan_update_probe(model)
+    optimizer.step()
+
+    joint_simgen_video_only_1gpu_diagnostic.assert_wan_update_probe_changed(probe)
 
 
 def test_video_only_accelerator_detects_intentionally_unused_pc_tail(monkeypatch):

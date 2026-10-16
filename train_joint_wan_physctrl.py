@@ -300,12 +300,17 @@ def _bridge_gradient_norm(model) -> torch.Tensor:
 
 def pc_gradient_norm(model) -> torch.Tensor:
     """Return the pre-clip global L2 gradient norm for the PhysCtrl model only."""
+    parameters = list(model.pc_model.parameters())
     gradients = [
         parameter.grad.detach().norm()
-        for parameter in model.pc_model.parameters()
+        for parameter in parameters
         if parameter.grad is not None
     ]
-    return torch.stack(gradients).norm() if gradients else torch.zeros(())
+    return (
+        torch.stack(gradients).norm()
+        if gradients
+        else parameters[0].new_zeros(()) if parameters else torch.zeros(())
+    )
 
 
 @torch.no_grad()

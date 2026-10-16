@@ -286,6 +286,31 @@ def test_pc_gradient_norm_uses_pc_gradients_only():
     assert pc_gradient_norm(model).item() == 5.0
 
 
+def test_pc_gradient_norm_without_gradients_uses_the_pc_device():
+    pc_parameter = torch.nn.Parameter(torch.empty(2, device="meta"))
+    model = type(
+        "Model",
+        (),
+        {"pc_model": type("PC", (), {"parameters": lambda self: [pc_parameter]})()},
+    )()
+
+    assert pc_gradient_norm(model).device.type == "meta"
+
+
+def test_pc_gradient_norm_without_gradients_is_a_zero_scalar():
+    pc_parameter = torch.nn.Parameter(torch.empty(2))
+    model = type(
+        "Model",
+        (),
+        {"pc_model": type("PC", (), {"parameters": lambda self: [pc_parameter]})()},
+    )()
+
+    norm = pc_gradient_norm(model)
+
+    assert norm.shape == ()
+    assert norm.item() == 0.0
+
+
 class _FakeAccelerator:
     def __init__(self, failed_paths=()):
         self.failed_paths = {Path(path).name for path in failed_paths}
