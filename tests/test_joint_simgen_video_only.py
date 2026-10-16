@@ -21,6 +21,20 @@ def test_frozen_auxiliary_update_probe_requires_and_observes_a_nonzero_wan_gradi
     joint_simgen_video_only_1gpu_diagnostic.assert_wan_update_probe_changed(probe)
 
 
+def test_metric_device_check_accepts_cuda_without_an_explicit_index():
+    metrics = {"loss": types.SimpleNamespace(device=torch.device("cuda:0"))}
+
+    mismatches = joint_simgen_video_only_1gpu_diagnostic.metric_device_mismatches(
+        metrics, torch.device("cuda")
+    )
+
+    assert mismatches == {}
+    assert joint_simgen_video_only_1gpu_diagnostic.metric_device_mismatches(
+        {"pc_gradient_norm": types.SimpleNamespace(device=torch.device("cpu"))},
+        torch.device("cuda"),
+    ) == {"pc_gradient_norm": "cpu"}
+
+
 def test_video_only_accelerator_detects_intentionally_unused_pc_tail(monkeypatch):
     """Video-only loss leaves the final PC-output path without gradients."""
     class FakeDistributedDataParallelKwargs:

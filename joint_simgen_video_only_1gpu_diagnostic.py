@@ -49,6 +49,16 @@ def assert_wan_update_probe_changed(probe) -> None:
         raise AssertionError("frozen-auxiliary optimizer did not update a Wan parameter")
 
 
+def metric_device_mismatches(metrics, accelerator_device) -> dict[str, str]:
+    """Return metrics whose device type cannot be reduced by this accelerator."""
+    accelerator_device_type = torch.device(accelerator_device).type
+    return {
+        name: str(value.device)
+        for name, value in metrics.items()
+        if value.device.type != accelerator_device_type
+    }
+
+
 def main() -> None:
     """Exercise the production model and first real sample through one backward pass."""
     parser = argparse.ArgumentParser(description=__doc__)
@@ -167,11 +177,7 @@ def main() -> None:
             "video_gradient_norm": video_gradient_norm(unwrapped).detach(),
             "pc_gradient_norm": pc_gradient_norm(unwrapped).detach(),
         }
-        incorrect_devices = {
-            name: str(value.device)
-            for name, value in metrics.items()
-            if value.device != accelerator.device
-        }
+        incorrect_devices = metric_device_mismatches(metrics, accelerator.device)
         if incorrect_devices:
             raise AssertionError(
                 "distributed metrics must be on the accelerator device: "
@@ -181,9 +187,7 @@ def main() -> None:
             name: accelerator.reduce(value, reduction="mean")
             for name, value in metrics.items()
         }
-        if any(
-            value.device != accelerator.device for value in reduced_metrics.values()
-        ):
+        if metric_device_mismatches(reduced_metrics, accelerator.device):
             raise AssertionError(
                 "metric reduction moved a value off the accelerator device"
             )
