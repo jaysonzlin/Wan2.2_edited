@@ -43,3 +43,14 @@ def test_one_gpu_frozen_auxiliary_diagnostic_launcher_runs_one_real_optimizer_st
         in script
     )
     assert "--frozen-auxiliary" in script
+
+
+def test_two_gpu_diagnostic_uses_accelerate_for_two_frozen_auxiliary_steps():
+    script = Path("submit_joint_simgen_video_only_2gpu_diagnostic.sh").read_text()
+
+    assert "torchrun" not in script
+    assert "accelerate" in script
+    assert "configs/accelerate/h200_2gpu.yaml" in script
+    assert "--expected-processes 2" in script
+    assert "--optimizer-steps 2" in script
+    assert "--frozen-auxiliary" in script

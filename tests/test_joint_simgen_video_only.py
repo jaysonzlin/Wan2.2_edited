@@ -35,6 +35,13 @@ def test_metric_device_check_accepts_cuda_without_an_explicit_index():
     ) == {"pc_gradient_norm": "cpu"}
 
 
+def test_optimizer_step_count_rejects_nonpositive_values():
+    with pytest.raises(ValueError, match="optimizer steps must be positive"):
+        joint_simgen_video_only_1gpu_diagnostic.validate_optimizer_steps(0)
+
+    assert joint_simgen_video_only_1gpu_diagnostic.validate_optimizer_steps(2) == 2
+
+
 def test_video_only_accelerator_detects_intentionally_unused_pc_tail(monkeypatch):
     """Video-only loss leaves the final PC-output path without gradients."""
     class FakeDistributedDataParallelKwargs:

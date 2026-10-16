@@ -1,4 +1,4 @@
-"""Run one real video-only SimGen backward pass without distributed training."""
+"""Run real video-only SimGen diagnostic steps with optional distributed training."""
 
 from __future__ import annotations
 
@@ -59,20 +59,31 @@ def metric_device_mismatches(metrics, accelerator_device) -> dict[str, str]:
     }
 
 
+def validate_optimizer_steps(optimizer_steps: int) -> int:
+    """Reject diagnostic requests that cannot perform an optimizer update."""
+    if optimizer_steps <= 0:
+        raise ValueError("optimizer steps must be positive")
+    return optimizer_steps
+
+
 def main() -> None:
-    """Exercise the production model and first real sample through one backward pass."""
+    """Exercise the production model and real samples through diagnostic steps."""
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
         "--config",
         default="configs/train/joint_simgen_480_8gpu_video_only_3slot.yaml",
     )
     parser.add_argument("--expected-processes", type=int, default=1)
+    parser.add_argument("--optimizer-steps", type=int, default=1)
     parser.add_argument(
         "--frozen-auxiliary",
         action="store_true",
         help="freeze the PC and bridge modules, then run one Wan-only optimizer step",
     )
     args = parser.parse_args()
+    optimizer_steps = validate_optimizer_steps(args.optimizer_steps)
+    if optimizer_steps != 1 and not args.frozen_auxiliary:
+        parser.error("--optimizer-steps greater than one requires --frozen-auxiliary")
 
     from accelerate.utils import set_seed
     from torch.utils.data import DataLoader
@@ -132,74 +143,87 @@ def main() -> None:
         model, train_loader = accelerator.prepare(model, train_loader)
     model.train()
     generator = _shared_generator(accelerator.device, training["seed"])
-    batch = next(iter(train_loader))
-    print(
-        "DIAGNOSTIC: "
-        f"rank={accelerator.process_index} loaded production batch "
-        f"video_shape={tuple(batch['video'].shape)} device={accelerator.device}",
-        flush=True,
-    )
+    train_iterator = iter(train_loader)
+    for optimizer_step in range(1, optimizer_steps + 1):
+        try:
+            batch = next(train_iterator)
+        except StopIteration:
+            train_iterator = iter(train_loader)
+            batch = next(train_iterator)
+        print(
+            "DIAGNOSTIC: "
+            f"rank={accelerator.process_index} step={optimizer_step}/{optimizer_steps} "
+            f"loaded production batch video_shape={tuple(batch['video'].shape)} "
+            f"device={accelerator.device}",
+            flush=True,
+        )
+        print(
+            f"DIAGNOSTIC: rank={accelerator.process_index} "
+            f"step={optimizer_step}/{optimizer_steps} starting production-shaped forward",
+            flush=True,
+        )
+        loss, _, _ = _video_only_losses(
+            batch,
+            model,
+            vae,
+            text_encoder,
+            generator,
+            accelerator.device,
+            config["data"],
+            config["model"],
+            config["objective"],
+        )
+        print(
+            f"DIAGNOSTIC: rank={accelerator.process_index} "
+            f"step={optimizer_step}/{optimizer_steps} forward completed "
+            f"loss={loss.detach().item():.6f}",
+            flush=True,
+        )
+        print(
+            f"DIAGNOSTIC: rank={accelerator.process_index} "
+            f"step={optimizer_step}/{optimizer_steps} starting video-only backward",
+            flush=True,
+        )
+        accelerator.backward(loss)
 
-    print(
-        f"DIAGNOSTIC: rank={accelerator.process_index} starting production-shaped forward",
-        flush=True,
-    )
-    loss, _, _ = _video_only_losses(
-        batch,
-        model,
-        vae,
-        text_encoder,
-        generator,
-        accelerator.device,
-        config["data"],
-        config["model"],
-        config["objective"],
-    )
-    print(
-        f"DIAGNOSTIC: rank={accelerator.process_index} "
-        f"forward completed loss={loss.detach().item():.6f}",
-        flush=True,
-    )
-    print(
-        f"DIAGNOSTIC: rank={accelerator.process_index} starting video-only backward",
-        flush=True,
-    )
-    accelerator.backward(loss)
-
-    unwrapped = accelerator.unwrap_model(model)
-    if not any(parameter.grad is not None for parameter in unwrapped.wan_model.parameters()):
-        raise AssertionError("video-only backward did not reach Wan parameters")
-    if args.frozen_auxiliary:
-        assert_frozen_pc_and_bridges_have_no_gradients(unwrapped)
-        metrics = {
-            "loss": loss.detach(),
-            "bridge_gradient_norm": _bridge_gradient_norm(unwrapped).detach(),
-            "video_gradient_norm": video_gradient_norm(unwrapped).detach(),
-            "pc_gradient_norm": pc_gradient_norm(unwrapped).detach(),
-        }
-        incorrect_devices = metric_device_mismatches(metrics, accelerator.device)
-        if incorrect_devices:
-            raise AssertionError(
-                "distributed metrics must be on the accelerator device: "
-                f"expected={accelerator.device}, actual={incorrect_devices}"
-            )
-        reduced_metrics = {
-            name: accelerator.reduce(value, reduction="mean")
-            for name, value in metrics.items()
-        }
-        if metric_device_mismatches(reduced_metrics, accelerator.device):
-            raise AssertionError(
-                "metric reduction moved a value off the accelerator device"
-            )
-        update_probe = capture_wan_update_probe(unwrapped)
-        accelerator.clip_grad_norm_(model.parameters(), training["max_grad_norm"])
-        optimizer.step()
-        assert_wan_update_probe_changed(update_probe)
-        optimizer.zero_grad(set_to_none=True)
+        unwrapped = accelerator.unwrap_model(model)
+        if not any(
+            parameter.grad is not None for parameter in unwrapped.wan_model.parameters()
+        ):
+            raise AssertionError("video-only backward did not reach Wan parameters")
+        if args.frozen_auxiliary:
+            assert_frozen_pc_and_bridges_have_no_gradients(unwrapped)
+            metrics = {
+                "loss": loss.detach(),
+                "bridge_gradient_norm": _bridge_gradient_norm(unwrapped).detach(),
+                "video_gradient_norm": video_gradient_norm(unwrapped).detach(),
+                "pc_gradient_norm": pc_gradient_norm(unwrapped).detach(),
+            }
+            incorrect_devices = metric_device_mismatches(metrics, accelerator.device)
+            if incorrect_devices:
+                raise AssertionError(
+                    "distributed metrics must be on the accelerator device: "
+                    f"expected={accelerator.device}, actual={incorrect_devices}"
+                )
+            reduced_metrics = {
+                name: accelerator.reduce(value, reduction="mean")
+                for name, value in metrics.items()
+            }
+            if metric_device_mismatches(reduced_metrics, accelerator.device):
+                raise AssertionError(
+                    "metric reduction moved a value off the accelerator device"
+                )
+            update_probe = capture_wan_update_probe(unwrapped)
+            accelerator.clip_grad_norm_(model.parameters(), training["max_grad_norm"])
+            optimizer.step()
+            assert_wan_update_probe_changed(update_probe)
+            optimizer.zero_grad(set_to_none=True)
+            accelerator.wait_for_everyone()
     print(
         "PASS: "
         f"rank={accelerator.process_index} production-shaped video-only "
-        f"{'frozen-auxiliary optimizer step' if args.frozen_auxiliary else 'backward'} completed",
+        f"{'frozen-auxiliary optimizer steps' if args.frozen_auxiliary else 'backward'} "
+        f"completed count={optimizer_steps}",
         flush=True,
     )
     accelerator.end_training()
