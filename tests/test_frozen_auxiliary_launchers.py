@@ -54,3 +54,21 @@ def test_two_gpu_diagnostic_uses_accelerate_for_two_frozen_auxiliary_steps():
     assert "--expected-processes 2" in script
     assert "--optimizer-steps 2" in script
     assert "--frozen-auxiliary" in script
+
+
+def test_eight_gpu_diagnostic_uses_two_nodes_for_two_frozen_auxiliary_steps():
+    script = Path(
+        "submit_joint_simgen_video_only_8gpu_frozen_auxiliary_diagnostic.sh"
+    ).read_text()
+
+    assert "#SBATCH --nodes=2" in script
+    assert "#SBATCH --ntasks=2" in script
+    assert "#SBATCH --ntasks-per-node=1" in script
+    assert "#SBATCH --gres=gpu:nvidia_h200:4" in script
+    assert "#SBATCH --time=01:00:00" in script
+    assert "#SBATCH --exclude=holygpu8a12204,holygpu8a18103,holygpu8a16503" in script
+    assert "configs/accelerate/h200_8gpu_2node.yaml" in script
+    assert "joint_simgen_video_only_1gpu_diagnostic.py" in script
+    assert "--expected-processes 8" in script
+    assert "--optimizer-steps 2" in script
+    assert "--frozen-auxiliary" in script
