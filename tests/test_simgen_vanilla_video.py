@@ -79,6 +79,29 @@ def test_training_metrics_reduce_on_every_rank_before_rank_zero_logging():
     }
 
 
+def test_periodic_checkpoint_prunes_to_the_configured_retention_limit(monkeypatch, tmp_path):
+    calls = []
+
+    class Accelerator:
+        is_main_process = True
+
+        def save_state(self, path):
+            calls.append(("save", path))
+
+    monkeypatch.setattr(
+        simgen_vanilla_video,
+        "prune_joint_checkpoints",
+        lambda path, limit: calls.append(("prune", path, limit)),
+    )
+
+    simgen_vanilla_video.save_periodic_checkpoint(Accelerator(), tmp_path, 1000, 2)
+
+    assert calls == [
+        ("save", tmp_path / "checkpoint-1000"),
+        ("prune", tmp_path, 2),
+    ]
+
+
 def test_final_validation_renderer_visits_every_configured_sample(monkeypatch, tmp_path):
     calls = []
     monkeypatch.setattr(

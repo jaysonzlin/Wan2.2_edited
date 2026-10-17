@@ -7,6 +7,7 @@ from pathlib import Path
 
 import torch
 
+from train_joint_wan_physctrl import prune_joint_checkpoints
 from training.simgen_vanilla_video_config import load_simgen_vanilla_video_config
 from training.simgen_video_only_dataset import SimGenVideoDataset, simgen_video_collate
 from training.wan_i2v_training import (
@@ -144,6 +145,13 @@ def training_metrics(accelerator, loss: torch.Tensor, gradient_norm: torch.Tenso
     }
 
 
+def save_periodic_checkpoint(accelerator, output_dir: Path, step: int, limit: int) -> None:
+    """Save one distributed state and retain only the configured numeric checkpoints."""
+    accelerator.save_state(output_dir / f"checkpoint-{step}")
+    if accelerator.is_main_process:
+        prune_joint_checkpoints(output_dir, limit)
+
+
 def run_training(config: dict) -> None:
     """Run the fresh base-Wan, no-PC/bridge training experiment."""
     from accelerate import Accelerator
@@ -214,16 +222,19 @@ def run_training(config: dict) -> None:
             if accelerator.is_main_process:
                 accelerator.log(metrics, step=global_step)
             if global_step % training["checkpoint_every_steps"] == 0:
-                accelerator.save_state(output_dir / f"checkpoint-{global_step}")
+                save_periodic_checkpoint(
+                    accelerator, output_dir, global_step, training["checkpoints_total_limit"]
+                )
             if global_step % config["validation"]["every_steps"] == 0 and accelerator.is_main_process:
                 unwrapped = accelerator.unwrap_model(model)
                 was_training = unwrapped.training
                 unwrapped.eval()
                 validation_generator = torch.Generator(device=accelerator.device).manual_seed(training["seed"])
-                validation_losses = [
-                    vanilla_video_loss(validation_batch, unwrapped, vae, text_encoder, validation_generator, accelerator.device, objective)[0]
-                    for validation_batch in validation_loader
-                ]
+                with torch.no_grad():
+                    validation_losses = [
+                        vanilla_video_loss(validation_batch, unwrapped, vae, text_encoder, validation_generator, accelerator.device, objective)[0]
+                        for validation_batch in validation_loader
+                    ]
                 mean_validation_loss = torch.stack(validation_losses).mean().item()
                 accelerator.log({"validation/video_loss": mean_validation_loss, "validation/loss": mean_validation_loss}, step=global_step)
                 render_video_sample(
