@@ -138,6 +138,18 @@ sbatch submit_visualize_joint_simgen_video_only_validation.sh
 Set `CHECKPOINT_PATH=/path/to/checkpoint` to render another video-only
 checkpoint, and optionally set `OUTPUT_DIR=/path/to/output`.
 
+### Vanilla Wan video ablation
+
+This ablation removes the PC and bidirectional bridge computation entirely and
+trains only the native Wan video model from the base TI2V checkpoint. It logs
+the current video loss and all-ten-sample validation loss every 1,000 steps,
+renders fixed-seed `sample_0` at that cadence, and automatically renders all
+ten validation samples after its final checkpoint.
+
+```sh
+sbatch submit_simgen_8gpu_2node_mamba_vanilla_wan_video.sh
+```
+
 ### SimGen PC pretraining
 
 Pretrain only the history-conditioned point-cloud branch on the exact native
