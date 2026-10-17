@@ -1,0 +1,44 @@
+data:
+  dataset_root: ../simgen/runs/panda_ball_can
+  width: 480
+  height: 480
+  num_frames: 49
+  train_start: 0
+  train_end: 127
+  validation_start: 490
+  validation_end: 499
+  train_batch_size: 1
+  dataloader_num_workers: 4
+model:
+  checkpoint_dir: Wan2.2-TI2V-5B
+  gradient_checkpointing: true
+  history_frames: 4
+objective:
+  video_type: flow
+  num_train_timesteps: 1000
+  time_shift: 5.0
+optimizer:
+  video: {lr: 1.0e-5, betas: [0.9, 0.95], eps: 1.0e-8, weight_decay: 0.1}
+training:
+  seed: 42
+  gradient_accumulation_steps: 1
+  max_train_steps: 100000
+  warmup_steps: 200
+  lr_scheduler: constant
+  max_grad_norm: 2.0
+  mixed_precision: bf16
+  checkpoint_every_steps: 1000
+  checkpoints_total_limit: 2
+  resume_from_checkpoint: null
+sampling:
+  num_inference_steps: 50
+visualization:
+  every_steps: 1000
+  fps: 12
+validation:
+  every_steps: 1000
+logging:
+  output_dir: outputs/simgen_vanilla_wan_video
+  report_to: wandb
+  project: joint-simgen
+  run_name: simgen-vanilla-wan-video
